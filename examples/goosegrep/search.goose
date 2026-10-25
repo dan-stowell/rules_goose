@@ -84,10 +84,20 @@ fn search_text(re: regex::Regex&, o: Options, path: u8[:], text: u8[:], out: u8[
 }
 
 // Reads and searches one file. Returns the number of selected lines, and
-// false if the file could not be read. A binary file is skipped: 0, true.
-fn search_file(re: regex::Regex&, o: Options, path: u8[:], out: u8[>..]&) -> i64, bool {
+// false if the file could not be read. A binary file is skipped (0, true)
+// unless it was named on the command line (`named`); then, as in rg, its
+// lines are counted but not printed: a note that it matches stands for them.
+fn search_file(re: regex::Regex&, o: Options, path: u8[:], named: bool, out: u8[>..]&) -> i64, bool {
     var text: u8[>..] = [];
     guard read_file(path, text) else { return 0, false; }
-    if is_binary(text) { return 0, true; }
-    return search_text(re, o, path, text, out), true;
+    guard is_binary(text) else { return search_text(re, o, path, text, out), true; }
+    guard named else { return 0, true; }
+    var quiet = o;
+    quiet.count = true;
+    let n = search_text(re, quiet, path, text, out);
+    if n > 0 && !o.count && !o.files_only {
+        if o.with_filename { format(out, path, ": "); }
+        format(out, "binary file matches (found \"\\0\" byte around offset ", position(text, 0), ")\n");
+    }
+    return n, true;
 }

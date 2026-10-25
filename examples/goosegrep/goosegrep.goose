@@ -5,8 +5,10 @@
 // Searches the files under each PATH (the current directory by default) for
 // lines matching PATTERN, a regex in the syntax of Rust's regex crate (no
 // anchors or \b). Directories are walked recursively; hidden files and
-// directories, and binary files (those with a NUL byte), are skipped. Files
-// are searched in path order, so the output is the same on every run.
+// directories, symlinks, and anything else that is not a regular file, are
+// skipped, as are binary files (those with a NUL byte), unless named. The
+// PATHs are searched in the order given, and the files under each directory
+// in path order, so the output is the same on every run.
 //
 // Exit status: 0 if a line was selected, 1 if none was, 2 on an error.
 
@@ -103,9 +105,10 @@ fn main() {
         exit(2);
     }
 
-    // Every file to search, as spans of `text`.
+    // Every file to search, as spans of `text`, and whether each was named.
     var text: u8[>..] = [];
     var files: walk::Span[>..] = [];
+    var named: bool[>..] = [];
     var errors = false;
     var many = paths.len > 1;
     if paths.len == 0 {
@@ -121,20 +124,22 @@ fn main() {
             if !walk::collect(text, files, span) { errors = true; }
         } else if file_exists(p) {
             files.push(span);
+            named.push(true);
         } else {
             walk::warn(p, "No such file or directory");
             errors = true;
         }
+        while named.len < files.len { named.push(false); }
     }
-    sort(files) { a, b => compare(text[a.start..a.end], text[b.start..b.end]) < 0 };
 
     o.with_filename = many;
     o.line_numbers = numbers > 0 || (numbers == 0 && many);
     var matched = false;
-    for f in files {
+    for i in files.len {
+        let f = files[i];
         let path = text[f.start..f.end];
         var out: u8[>..] = [];
-        let n, ok = search::search_file(re, o, path, out);
+        let n, ok = search::search_file(re, o, path, i < named.len && named[i], out);
         if !ok {
             walk::warn(path, "cannot read file");
             errors = true;

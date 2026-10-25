@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # Usage: cli_test.sh <goosegrep> <a file in testdata/> <expected stdout> <expected exit code> [args...]
-# Runs goosegrep with the args from inside the testdata tree and checks its
-# exit code and its stdout.
+# Copies the testdata tree (runfiles may be symlinks, which goosegrep's walk
+# skips), runs $SETUP in the copy, then goosegrep with the args, and checks
+# its exit code and its stdout.
 set -uo pipefail
 prog="$PWD/$1"
 tree="$(dirname "$2")"
@@ -10,7 +11,12 @@ expected="$PWD/$3"
 want_code="$4"
 shift 4
 got="$TEST_TMPDIR/got"
-cd "$tree" || exit 1
+copy="$TEST_TMPDIR/tree"
+mkdir -p "$copy" && cp -RL "$tree/." "$copy" || exit 1
+cd "$copy" || exit 1
+if [[ -n "${SETUP:-}" ]]; then
+  eval "$SETUP" || { echo "FAIL: setup failed: $SETUP" >&2; exit 1; }
+fi
 "$prog" "$@" > "$got"
 code=$?
 fail=0
