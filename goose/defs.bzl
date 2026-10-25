@@ -60,4 +60,5 @@ def goose_binary(name, **kwargs):
 
 def goose_test(name, **kwargs):
     """A Goose program run as a test (cc_test): it passes when it exits 0."""
-    _goose_program(cc_test, name, testonly = True, **kwargs)
+    kwargs["testonly"] = True
+    _goose_program(cc_test, name, **kwargs)
