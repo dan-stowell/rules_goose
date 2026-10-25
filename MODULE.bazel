@@ -8,6 +8,10 @@ module(
 bazel_dep(name = "platforms", version = "1.1.0")
 bazel_dep(name = "rules_cc", version = "0.2.27")
 
+# tests/ loads sh_test; a regular dependency so that every package here loads
+# from a consumer (bazel query @rules_goose//...).
+bazel_dep(name = "rules_shell", version = "0.8.0")
+
 # The Goose compiler, built from source with rules_cc by the overlay BUILD
 # file in goose/private/.
 http_archive = use_repo_rule("@bazel_tools//tools/build_defs/repo:http.bzl", "http_archive")
@@ -26,7 +30,6 @@ http_archive(
 # Users of rules_goose bring their own C/C++ toolchain. This repository's own
 # builds and tests use hermetic-llvm, a zero-sysroot LLVM toolchain.
 
-bazel_dep(name = "rules_shell", version = "0.8.0", dev_dependency = True)
 bazel_dep(name = "llvm", version = "0.8.25", dev_dependency = True)
 
 register_toolchains(
