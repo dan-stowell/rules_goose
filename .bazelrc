@@ -8,6 +8,8 @@
 # that is not x86-64 Linux this cross-compiles; run with the remote configs.)
 build:musl --platforms=@llvm//platforms:linux_x86_64_musl
 build:musl --host_platform=@llvm//platforms:linux_x86_64_musl
+# musl is linked statically only, so tests (cc_test defaults to dynamic) too.
+build:musl --dynamic_mode=off
 build --config=musl
 
 test --test_output=errors
