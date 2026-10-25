@@ -79,6 +79,8 @@ def _goose_c_impl(ctx):
     args = ctx.actions.args()
     args.add(ctx.executable._compiler)
     args.add(ctx.outputs.out)
+    log = ctx.actions.declare_file(ctx.label.name + ".log")
+    args.add(log)
     args.add(src_dir)
     args.add(main_rel)
     args.add_all(ctx.attr.goose_opts)
@@ -86,7 +88,7 @@ def _goose_c_impl(ctx):
         args.add("--include", _relative_to(h, prefix, "c_hdrs", main))
 
     ctx.actions.run_shell(
-        outputs = [ctx.outputs.out],
+        outputs = [ctx.outputs.out, log],
         inputs = depset(staged.values() + stdlib),
         tools = [ctx.executable._compiler],
         arguments = [args],
@@ -101,14 +103,15 @@ out="$execroot/$2"
 # Nothing is fetched (--offline), and no package cache is read: GOOSE_HOME
 # names a directory that does not exist.
 goose_home="${out%/*}/.goose-home-unused"
-cd "$3"
-main="$4"
-shift 4
+log="$execroot/$3"
+cd "$4"
+main="$5"
+shift 5
 here_physical="$(pwd -P)"
 here_logical="$(pwd)"
 # The compiler's progress goes to stdout, its errors to stderr.
 GOOSE_HOME="$goose_home" \\
-    "$compiler" --standalone --offline --stdlib ../stdlib "$@" -o "$out" "$main" > /dev/null
+    "$compiler" --standalone --offline --stdlib ../stdlib "$@" -o "$out" "$main" > "$log"
 # Path packages (import x from "./dir") are named by absolute path in the C;
 # make those paths relative to the source tree, so the C is the same everywhere.
 c="$(< "$out")"
@@ -133,7 +136,7 @@ fi
         )]),
     )
     return [
-        DefaultInfo(files = depset([ctx.outputs.out])),
+        DefaultInfo(files = depset([ctx.outputs.out, log])),
         CcInfo(
             compilation_context = compilation_context,
             linking_context = linking_context,

@@ -289,3 +289,97 @@ sh_test(
     ],
     tags = ["exclusive"],
 )
+
+# ---- Performance investigation ------------------------------------------
+
+# The same decoder with --bce-lines: goosezstd_bce_goose's .log lists the
+# bounds checks that survive, per line.
+goose_binary(
+    name = "goosezstd_bce",
+    srcs = ["cli.goose"] + DECODER_SRCS,
+    goose_opts = ["-O2", "--bce-lines"],
+    main = "goosezstd.goose",
+)
+
+# Variants of the decoder, each a copy of the sources under perf/<name>/
+# with one change: copy (overlapping matches copied in doubling chunks, not
+# byte by byte), huf (Huffman: four codes per 8-byte load, and load_le64
+# through one slice check), all (both).
+[goose_binary(
+    name = "goosezstd_" + v,
+    srcs = ["perf/%s/cli.goose" % v] + ["perf/%s/%s" % (v, f) for f in DECODER_SRCS],
+    goose_opts = ["-O2", "--bce-lines"],
+    main = "perf/%s/goosezstd.goose" % v,
+) for v in ["copy", "huf", "all", "seq"]]
+
+# The unchanged decoder with the C compiled for x86-64-v3 at -O3.
+goose_binary(
+    name = "goosezstd_v3",
+    srcs = ["cli.goose"] + DECODER_SRCS,
+    copts = ["-O3", "-march=x86-64-v3"],
+    goose_opts = ["-O2"],
+    main = "goosezstd.goose",
+)
+
+zstd_compress(
+    name = "big_l3_nocheck",
+    src = ":big.bin",
+    flags = "-3 --no-check",
+)
+
+[goose_binary(
+    name = "goosezstd_" + n,
+    srcs = ["cli.goose"] + DECODER_SRCS,
+    copts = c,
+    goose_opts = ["-O2"],
+    main = "goosezstd.goose",
+) for n, c in [("O3", ["-O3"]), ("v3only", ["-march=x86-64-v3"])]]
+
+# 64 MiB of lorem ipsum: Huffman-heavy, many short matches.
+genrule(
+    name = "big_text",
+    outs = ["big_text.txt"],
+    cmd = "$(execpath %s) -g64M -s5 > $@" % DATAGEN,
+    tools = [DATAGEN],
+    testonly = True,
+)
+
+zstd_compress(
+    name = "big_text_l3",
+    src = ":big_text.txt",
+    flags = "-3",
+)
+
+PERF_DECODERS = {
+    "zstd": ZSTD,
+    "libzstd_demo": ":libzstd_demo",
+    "goosezstd": ":goosezstd",
+    "goosezstd_v3": ":goosezstd_v3",
+    "goosezstd_copy": ":goosezstd_copy",
+    "goosezstd_huf": ":goosezstd_huf",
+    "goosezstd_all": ":goosezstd_all",
+    "goosezstd_seq": ":goosezstd_seq",
+    "goosezstd_O3": ":goosezstd_O3",
+    "goosezstd_v3only": ":goosezstd_v3only",
+}
+
+PERF_INPUTS = [
+    (":big.bin", ":big_l3.zst"),
+    (":big.bin", ":big_l3_nocheck.zst"),
+    (":big.bin", ":big_l19.zst"),
+    (":big_text.txt", ":big_text_l3.zst"),
+]
+
+sh_test(
+    name = "perf_bench_test",
+    size = "large",
+    srcs = ["perf/perf_bench_test.sh"],
+    args = ["5", "$(rootpath %s)" % ZSTD] +
+           ["%s=$(rootpath %s)" % (n, d) for n, d in PERF_DECODERS.items()] +
+           ["--"] + [a for o, c in PERF_INPUTS for a in ["$(rootpath %s)" % o, "$(rootpath %s)" % c]],
+    data = depset(PERF_DECODERS.values() + [x for p in PERF_INPUTS for x in p]).to_list(),
+    tags = [
+        "exclusive",
+        "manual",
+    ],
+)

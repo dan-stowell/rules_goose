@@ -19,7 +19,7 @@ static int32_t c_zstd_decompress(sl_u8 src, gs_rref out, gs_rref err) {
         left = ZSTD_decompressStream(d, &o, &in);
         if (ZSTD_isError(left)) { msg = ZSTD_getErrorName(left); break; }
         gs_bld_append(out, buf, o.pos);
-        if (in.pos == in.size && o.pos < o.size) break;
+        if (in.pos == in.size && (left == 0 || o.pos == 0)) break;
     }
     if (msg == NULL && left != 0) msg = "truncated input";
     free(buf);
