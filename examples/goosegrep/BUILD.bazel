@@ -1,0 +1,99 @@
+# goosegrep: a small ripgrep in Goose, and its tests.
+
+load("//goose:defs.bzl", "goose_binary", "goose_test")
+load(":cli_test.bzl", "cli_tests")
+
+# The walk lists directories through dir_shim.h, a little C called with
+# `extern fn` (the os module's list_dir follows symlinks and joins names with
+# newlines).
+goose_binary(
+    name = "goosegrep",
+    srcs = [
+        "search.goose",
+        "walk.goose",
+    ],
+    c_hdrs = ["dir_shim.h"],
+    goose_opts = ["-O2"],
+    main = "goosegrep.goose",
+)
+
+# The search module on its own.
+goose_test(
+    name = "search_test",
+    size = "small",
+    srcs = ["search.goose"],
+    main = "search_test.goose",
+)
+
+# The fixture tree the CLI tests search. Its hidden files and its binary file
+# (binary.bin, "goose\0honk") all hold "goose", which goosegrep must skip
+# unless they are named.
+filegroup(
+    name = "testdata",
+    srcs = [
+        "testdata/.dotfile",
+        "testdata/.hidden/secret.txt",
+        "testdata/README.md",
+        "testdata/binary.bin",
+        "testdata/notes.txt",
+        "testdata/src/lib/goose.goose",
+        "testdata/src/main.go",
+    ],
+)
+
+# Each case (a cli_test) runs `goosegrep <args>` in a copy of testdata/ (after `setup`,
+# if any) and checks stdout against expected/<name>.out (or `expected`) and
+# the exit code (0: a line was selected, 1: none, 2: an error).
+CASES = [
+    # The current directory, walked recursively in path order: path:line:text.
+    dict(name = "default", args = ["goose"]),
+    dict(name = "ignore_case", args = ["-i", "goose"]),
+    dict(name = "word", args = ["-w", "goose"]),
+    # Short flags combine.
+    dict(name = "word_ignore_case", args = ["-iw", "goose"]),
+    dict(name = "regex", args = ["--ignore-case", "qu[a-z]+ck|DU.K"]),
+    # -F: the pattern's punctuation is literal.
+    dict(name = "fixed", args = ["-F", "$$3.50"]),
+    dict(name = "fixed_paren", args = ["--fixed-strings", "(approx"], expected = "expected/fixed.out"),
+    # Without -F, "(approx" is a malformed regex.
+    dict(name = "bad_regex", args = ["(approx"], expected = "expected/empty.out", exit_code = 2),
+    # -w must not make a malformed pattern well-formed by wrapping it.
+    dict(name = "bad_regex_word", args = ["-w", ")|goose|(?:"], expected = "expected/empty.out", exit_code = 2),
+    dict(name = "count", args = ["-c", "goose"]),
+    # One file: no file name in front.
+    dict(name = "count_one_file", args = ["-c", "o", "notes.txt"]),
+    dict(name = "files_with_matches", args = ["-l", "goose"]),
+    # One file: neither file names nor line numbers by default.
+    dict(name = "invert", args = ["-v", "goose", "notes.txt"]),
+    dict(name = "line_number", args = ["-n", "dog", "notes.txt"]),
+    dict(name = "no_line_number", args = ["-N", "goose"]),
+    # A directory argument, and "." spelled out.
+    dict(name = "dir_arg", args = ["honk", "src"]),
+    dict(name = "dot_arg", args = ["-l", "goose", "."]),
+    # A hidden file named explicitly is searched.
+    dict(name = "hidden_explicit", args = ["goose", ".hidden/secret.txt"]),
+    # So is a binary file, as in rg: a note stands for its matching lines.
+    dict(name = "binary_explicit", args = ["goose", "binary.bin"]),
+    # The PATHs are searched in the order given.
+    dict(name = "arg_order", args = ["goose", "src", "notes.txt"]),
+    dict(name = "no_match", args = ["zebra"], expected = "expected/empty.out", exit_code = 1),
+    # A missing path is an error, but the other files are still searched.
+    dict(name = "missing_path", args = ["dog", "notes.txt", "nope.txt"], exit_code = 2),
+    dict(name = "no_args", args = [], expected = "expected/empty.out", exit_code = 2),
+
+    # The walk does not follow symlinks, so loops end and each file is
+    # printed once; a dangling one, or one to a file, is skipped quietly.
+    dict(name = "symlink_loop", args = ["honk", "src"], expected = "expected/dir_arg.out", setup = "ln -s . src/self"),
+    dict(name = "symlink_loops", args = ["honk", "src"], expected = "expected/dir_arg.out", setup = "ln -s . src/self && ln -s .. src/lib/up"),
+    dict(name = "symlink_dangling", args = ["honk", "src"], expected = "expected/dir_arg.out", setup = "ln -s nowhere src/dangling"),
+    dict(name = "symlink_dangling_no_match", args = ["zebra"], expected = "expected/empty.out", exit_code = 1, setup = "ln -s nowhere dangling"),
+    dict(name = "symlink_file", args = ["goose"], expected = "expected/default.out", setup = "ln -s notes.txt link.txt"),
+    # A symlink named as a PATH is followed.
+    dict(name = "symlink_arg", args = ["honk", "srclink"], setup = "ln -s src srclink"),
+    # A FIFO is skipped, not opened (which would block).
+    dict(name = "fifo", args = ["honk", "src"], expected = "expected/dir_arg.out", setup = "mkfifo src/pipe"),
+    # A newline in a file name is part of the name.
+    dict(name = "newline_name", args = ["-l", "goose"], setup = "echo goose > $$'new\\nline.txt'"),
+]
+
+cli_tests(CASES)

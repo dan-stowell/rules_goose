@@ -1,0 +1,2 @@
+src/lib/goose.goose:2:fn honk() -> u8[:] { "honk honk" }
+src/main.go:3:func main() { println("honk") }

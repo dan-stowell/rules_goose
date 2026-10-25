@@ -1,0 +1,6 @@
+The quick brown fox
+jumps over the lazy dog.
+A goose is not a duck.
+GOOSE season opens today
+mongoose sightings: 3
+price: $3.50 (approx)

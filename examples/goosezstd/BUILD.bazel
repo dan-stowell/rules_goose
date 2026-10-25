@@ -1,0 +1,434 @@
+# goosezstd: a Zstandard decompressor written in Goose, tested against the
+# real zstd (the BCR module, built with the same C toolchain): the zstd CLI
+# compresses a set of inputs at build time, at several settings, and each
+# test decodes one result with goosezstd and compares it with the input.
+
+load("@rules_shell//shell:sh_test.bzl", "sh_test")
+load("//goose:defs.bzl", "goose_binary")
+load(":fixtures.bzl", "ZSTD", "decompress_test", "reject_test", "zstd_compress", "zstd_matrix", "zstd_roundtrip")
+
+DECODER_SRCS = [
+    "zstd/bits.goose",
+    "zstd/blocks.goose",
+    "zstd/frame.goose",
+    "zstd/fse.goose",
+    "zstd/huffman.goose",
+    "zstd/xxhash.goose",
+]
+
+goose_binary(
+    name = "goosezstd",
+    srcs = ["cli.goose"] + DECODER_SRCS,
+    goose_opts = ["-O2"],
+    main = "goosezstd.goose",
+)
+
+# The same command line over the real libzstd, through extern fn: an
+# interop demo, and a check that the test harness itself agrees with zstd.
+goose_binary(
+    name = "libzstd_demo",
+    srcs = ["cli.goose"],
+    c_hdrs = ["libzstd_shim.h"],
+    cc_deps = ["@zstd//:zstd"],
+    goose_opts = ["-O2"],
+    main = "libzstd_demo.goose",
+)
+
+# ---- Inputs -------------------------------------------------------------
+
+DATAGEN = "@zstd//:datagen_cli"
+
+# Lorem ipsum text (datagen's default), 1 MiB.
+genrule(
+    name = "lorem",
+    outs = ["lorem.txt"],
+    cmd = "$(execpath %s) -g1M -s1 > $@" % DATAGEN,
+    tools = [DATAGEN],
+    testonly = True,
+)
+
+# Real text: some of Goose's own samples.
+genrule(
+    name = "goose_text",
+    srcs = [
+        "@goose_src//:samples/01_tour.goose",
+        "@goose_src//:samples/12_huffman.goose",
+        "@goose_src//:samples/18_json.goose",
+        "@goose_src//:samples/19_vm.goose",
+        "@goose_src//:samples/30_mini_minecraft.goose",
+        "@goose_src//:samples/31_mini_doom.goose",
+        "@goose_src//:samples/data/alice.txt",
+    ],
+    outs = ["goose_text.txt"],
+    cmd = "cat $(SRCS) > $@",
+    testonly = True,
+)
+
+# A small, very repetitive text.
+genrule(
+    name = "honk",
+    outs = ["honk.txt"],
+    cmd = "for ((i = 0; i < 20000; i++)); do echo \"honk honk goose $$((i % 7))\"; done > $@",
+    testonly = True,
+)
+
+# 300 KB of zeros: RLE blocks.
+genrule(
+    name = "zeros",
+    outs = ["zeros.bin"],
+    cmd = "head -c 300000 /dev/zero > $@",
+    testonly = True,
+)
+
+# Incompressible noise: raw blocks and raw literals.
+genrule(
+    name = "noise",
+    outs = ["noise.bin"],
+    cmd = "$(execpath %s) -g20K -P0 -s2 > $@" % DATAGEN,
+    tools = [DATAGEN],
+    testonly = True,
+)
+
+# 3 MiB of half-compressible synthetic data: many blocks, long matches.
+genrule(
+    name = "mixed",
+    outs = ["mixed.bin"],
+    cmd = "$(execpath %s) -g3M -P50 -s3 > $@" % DATAGEN,
+    tools = [DATAGEN],
+    testonly = True,
+)
+
+# 1 MiB of bytes drawn from an exponential distribution: Huffman literals
+# over ~90 symbols, the rarest far below 2^-11, so zstd limits the code
+# lengths to the maximum, 11 bits.
+genrule(
+    name = "skewed",
+    outs = ["skewed.bin"],
+    cmd = """LC_ALL=C awk 'BEGIN {
+        srand(1)
+        for (i = 0; i < 1048576; i++) {
+            s = int(-log(1 - rand()) * 6)
+            printf "%c", (s > 255 ? 255 : s)
+        }
+    }' > $@""",
+    testonly = True,
+)
+
+genrule(
+    name = "empty",
+    outs = ["empty.bin"],
+    cmd = ": > $@",
+    testonly = True,
+)
+
+genrule(
+    name = "one_byte",
+    outs = ["one_byte.bin"],
+    cmd = "printf g > $@",
+    testonly = True,
+)
+
+INPUTS = {
+    "empty": ":empty.bin",
+    "goose_text": ":goose_text.txt",
+    "honk": ":honk.txt",
+    "lorem": ":lorem.txt",
+    "mixed": ":mixed.bin",
+    "noise": ":noise.bin",
+    "one_byte": ":one_byte.bin",
+    "skewed": ":skewed.bin",
+    # A Doom level (Freedoom, from Goose's mini_doom sample): 4.8 MB of binary.
+    "wad": "@goose_src//:samples/data/freedoom1-e1m1.wad",
+    "zeros": ":zeros.bin",
+}
+
+# zstd flags, and whether zstd reads the input from a pipe (no content size).
+SETTINGS = {
+    "fast": ("--fast=5", False),
+    "l1": ("-1", False),
+    "l3": ("-3", False),
+    "l19": ("-19", False),
+    "long": ("-9 --long=27", False),
+    "mt": ("-12 -T4", False),
+    "nocheck": ("-3 --no-check", False),
+    "stream": ("-6", True),
+    "ultra": ("--ultra -22", False),
+}
+
+# //examples/goosezstd:<input>_<setting>_test
+zstd_matrix(INPUTS, SETTINGS)
+
+# ---- Several frames in one file -----------------------------------------
+
+genrule(
+    name = "multi_frame",
+    srcs = [
+        ":lorem_l1.zst",
+        ":zeros_l19.zst",
+        ":empty_l3.zst",
+        ":noise_stream.zst",
+        ":honk_nocheck.zst",
+    ],
+    outs = ["multi_frame.zst"],
+    # A skippable frame (magic 0x184D2A5A, 5 bytes of payload) up front and
+    # another in the middle.
+    cmd = """
+        skip() { printf '\\x5a\\x2a\\x4d\\x18\\x05\\x00\\x00\\x00honk!'; }
+        srcs=($(SRCS))
+        { skip; cat "$${srcs[@]:0:2}"; skip; cat "$${srcs[@]:2}"; } > $@
+    """,
+    testonly = True,
+)
+
+genrule(
+    name = "multi_frame_original",
+    srcs = [
+        ":lorem.txt",
+        ":zeros.bin",
+        ":empty.bin",
+        ":noise.bin",
+        ":honk.txt",
+    ],
+    outs = ["multi_frame.orig"],
+    cmd = "cat $(SRCS) > $@",
+    testonly = True,
+)
+
+decompress_test(
+    name = "multi_frame_test",
+    compressed = ":multi_frame.zst",
+    original = ":multi_frame.orig",
+)
+
+# ---- Edges of the decoder's fast paths ----------------------------------
+
+# Short Huffman streams (one stream below about 1 KB of literals), where the
+# four-codes-at-a-time loop runs briefly or not at all.
+[genrule(
+    name = "lorem_%d" % n,
+    srcs = [":lorem.txt"],
+    outs = ["lorem_%d.txt" % n],
+    cmd = "head -c %d $< > $@" % n,
+    testonly = True,
+) for n in [100, 300, 1000]]
+
+[zstd_roundtrip(
+    name = "lorem_%d_l19" % n,
+    src = ":lorem_%d.txt" % n,
+    flags = "-19",
+) for n in [100, 300, 1000]]
+
+# Long offsets and literal lengths: 1 MiB of noise A, 16 MiB of noise, 100
+# KiB of noise, then A with a byte inserted after every 0x01. With --long,
+# the last part is thousands of matches about 17 MiB back (24 offset bits),
+# each at a new offset, and the block it starts in opens with a sequence of
+# over 64 KiB of literals (the largest literal length code, 16 extra bits).
+genrule(
+    name = "far",
+    outs = ["far.bin"],
+    cmd = """
+        d=$(execpath %s)
+        { $$d -g1M -P0 -s7; $$d -g16M -P0 -s8; $$d -g100K -P0 -s9
+          $$d -g1M -P0 -s7 | LC_ALL=C sed 's/\\x01/\\x01g/g'; } > $@
+    """ % DATAGEN,
+    tools = [DATAGEN],
+    testonly = True,
+)
+
+[zstd_roundtrip(
+    name = "far_" + n,
+    size = "medium",
+    src = ":far.bin",
+    flags = f,
+) for n, f in [("long", "-3 --long=27"), ("l19_long", "-19 --long=27")]]
+
+# ---- Damaged input is rejected ------------------------------------------
+
+# Damaged versions of real zstd output, with goosezstd's message for each.
+DAMAGED = {
+    "bad_magic.zst": "bad magic number",
+    "bad_checksum.zst": "checksum mismatch",
+    "truncated.zst": "truncated compressed block",
+    "trailing_garbage.zst": "bad magic number",
+    "garbled.zst": "match offset before the start of the frame",
+}
+
+genrule(
+    name = "damaged",
+    srcs = [
+        ":noise_l3.zst",
+        ":lorem_l19.zst",
+    ],
+    outs = DAMAGED.keys(),
+    cmd = """
+        srcs=($(SRCS))
+        raw=$${srcs[0]} huf=$${srcs[1]}
+        out=$(RULEDIR)
+        { printf '\\x29'; tail -c +2 $$raw; } > $$out/bad_magic.zst
+        # noise is stored in raw blocks: change two content bytes, so only
+        # the checksum notices.
+        cp $$raw $$out/bad_checksum.zst
+        printf '\\x00\\xff' | dd of=$$out/bad_checksum.zst bs=1 seek=1000 conv=notrunc status=none
+        n=$$(stat -c %s $$huf)
+        head -c $$((n / 2)) $$huf > $$out/truncated.zst
+        { cat $$huf; printf 'goose'; } > $$out/trailing_garbage.zst
+        # Overwrite bytes inside the entropy-coded data.
+        cp $$huf $$out/garbled.zst
+        printf 'GOOSEGOOSEGOOSE' | dd of=$$out/garbled.zst bs=1 seek=$$((n / 3)) conv=notrunc status=none
+    """,
+    testonly = True,
+)
+
+# Hand-made frames, each broken in one way (see malformed.sh).
+MALFORMED = {
+    "empty.zst": "empty input: no frames",
+    "huf_fse_init_truncated.zst": "truncated FSE stream",
+    "seq_fse_init_truncated.zst": "truncated FSE stream",
+    "huf_bad_weights.zst": "Huffman weights do not complete a tree",
+    "fse_log_too_large.zst": "FSE accuracy log too large",
+    "fse_bad_counts.zst": "bad FSE table description",
+    "seq_count_too_large.zst": "sequence stream size mismatch",
+    "seq_past_block.zst": "block too large",
+    "offset_beyond_window.zst": "match offset beyond the window",
+}
+
+genrule(
+    name = "malformed",
+    srcs = ["malformed.sh"],
+    outs = MALFORMED.keys(),
+    cmd = "bash $< $(RULEDIR)",
+    testonly = True,
+)
+
+reject_test(
+    name = "reject_test",
+    decoder = ":goosezstd",
+    rejects = DAMAGED | MALFORMED,
+)
+
+# ---- The libzstd demo ---------------------------------------------------
+
+[decompress_test(
+    name = "libzstd_demo_%s_test" % f,
+    compressed = ":%s.zst" % f,
+    decoder = ":libzstd_demo",
+    original = INPUTS[f.rsplit("_", 1)[0]],
+) for f in [
+    "goose_text_l19",
+    "wad_long",
+]]
+
+decompress_test(
+    name = "libzstd_demo_multi_frame_test",
+    compressed = ":multi_frame.zst",
+    decoder = ":libzstd_demo",
+    original = ":multi_frame.orig",
+)
+
+# Content an exact multiple of ZSTD_DStreamOutSize() (128 KiB), so the last
+# call that finishes the frame also fills the output buffer.
+[genrule(
+    name = "exact_%s" % s,
+    outs = ["exact_%s.bin" % s],
+    cmd = "$(execpath %s) -g%s -P60 -s4 > $@" % (DATAGEN, s),
+    tools = [DATAGEN],
+    testonly = True,
+) for s in ["128K", "256K"]]
+
+[zstd_roundtrip(
+    name = "libzstd_demo_exact_%s" % s,
+    src = ":exact_%s.bin" % s,
+    decoder = ":libzstd_demo",
+    flags = "-3",
+) for s in ["128K", "256K"]]
+
+# libzstd rejects the same files, but for offset_beyond_window: it checks
+# offsets against the frame's start only. Its messages are its error names.
+CORRUPT = "Data corruption detected"
+
+reject_test(
+    name = "libzstd_demo_reject_test",
+    decoder = ":libzstd_demo",
+    rejects = {
+        "bad_magic.zst": "Unknown frame descriptor",
+        "bad_checksum.zst": "Restored data doesn't match checksum",
+        "truncated.zst": "truncated input",
+        "trailing_garbage.zst": "Unknown frame descriptor",
+        "garbled.zst": CORRUPT,
+        "empty.zst": "truncated input",
+        "huf_fse_init_truncated.zst": CORRUPT,
+        "seq_fse_init_truncated.zst": CORRUPT,
+        "huf_bad_weights.zst": CORRUPT,
+        "fse_log_too_large.zst": CORRUPT,
+        "fse_bad_counts.zst": CORRUPT,
+        "seq_count_too_large.zst": CORRUPT,
+        "seq_past_block.zst": "Destination buffer is too small",
+    },
+)
+
+# ---- Throughput, against the real zstd ----------------------------------
+
+genrule(
+    name = "big",
+    outs = ["big.bin"],
+    cmd = "$(execpath %s) -g64M -P60 -s4 > $@" % DATAGEN,
+    tools = [DATAGEN],
+    testonly = True,
+)
+
+zstd_compress(
+    name = "big_l3",
+    src = ":big.bin",
+    flags = "-3",
+)
+
+zstd_compress(
+    name = "big_l19",
+    src = ":big.bin",
+    flags = "-19 -T0",
+)
+
+# Throughput of goosezstd, the libzstd demo and the zstd CLI, best, median
+# and worst of five runs each (bb view ... :perf_bench_test). Run it on
+# its own:
+#   bb remote test //examples/goosezstd:perf_bench_test -c opt
+genrule(
+    name = "big_text",
+    outs = ["big_text.txt"],
+    cmd = "$(execpath %s) -g64M -s5 > $@" % DATAGEN,
+    tools = [DATAGEN],
+    testonly = True,
+)
+
+zstd_compress(
+    name = "big_text_l3",
+    src = ":big_text.txt",
+    flags = "-3",
+)
+
+PERF_DECODERS = {
+    "zstd": ZSTD,
+    "libzstd_demo": ":libzstd_demo",
+    "goosezstd": ":goosezstd",
+}
+
+PERF_INPUTS = [
+    (":big.bin", ":big_l3.zst"),
+    (":big.bin", ":big_l19.zst"),
+    (":big_text.txt", ":big_text_l3.zst"),
+]
+
+sh_test(
+    name = "perf_bench_test",
+    size = "large",
+    srcs = ["perf_bench_test.sh"],
+    args = ["5"] +
+           ["%s=$(rootpath %s)" % (n, d) for n, d in PERF_DECODERS.items()] +
+           ["--"] +
+           ["$(rootpath %s)" % f for pair in PERF_INPUTS for f in pair],
+    data = PERF_DECODERS.values() + {f: None for pair in PERF_INPUTS for f in pair}.keys(),
+    tags = [
+        "exclusive",
+        "manual",
+    ],
+)
