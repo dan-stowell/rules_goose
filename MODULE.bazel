@@ -1,0 +1,35 @@
+"""Bazel rules for the Goose programming language (https://github.com/aardappel/goose)."""
+
+module(
+    name = "rules_goose",
+    version = "0.0.0",
+)
+
+bazel_dep(name = "platforms", version = "1.1.0")
+bazel_dep(name = "rules_cc", version = "0.2.27")
+
+# The Goose compiler, built from source with rules_cc by the overlay BUILD
+# file in goose/private/.
+http_archive = use_repo_rule("@bazel_tools//tools/build_defs/repo:http.bzl", "http_archive")
+
+GOOSE_COMMIT = "94cc64daeabcae6f072dc1fe2b864acda5a001bc"
+
+http_archive(
+    name = "goose_src",
+    build_file = "//goose/private:goose_src.BUILD.bazel",
+    sha256 = "cc6d218196ad7309d5cead7af9534f82d5e65989a1fb622ca2f375f27e3f8baf",
+    strip_prefix = "goose-" + GOOSE_COMMIT,
+    urls = ["https://github.com/aardappel/goose/archive/%s.tar.gz" % GOOSE_COMMIT],
+)
+
+# ---- Development of this repository only ------------------------------------
+# Users of rules_goose bring their own C/C++ toolchain. This repository's own
+# builds and tests use hermetic-llvm, a zero-sysroot LLVM toolchain.
+
+bazel_dep(name = "rules_shell", version = "0.8.0", dev_dependency = True)
+bazel_dep(name = "llvm", version = "0.8.25", dev_dependency = True)
+
+register_toolchains(
+    "@llvm//toolchain:all",
+    dev_dependency = True,
+)

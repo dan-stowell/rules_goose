@@ -1,0 +1,36 @@
+# Development settings for this repository. Users of rules_goose do not
+# inherit these.
+
+common --enable_platform_specific_config
+
+# This repository builds with hermetic-llvm (registered in MODULE.bazel as a
+# dev dependency), targeting static musl, so the Goose compiler (which runs in
+# the exec configuration) and the test programs run on any x86-64 Linux,
+# whatever its glibc: remote executors and actiond's VM included.
+build:musl --platforms=@llvm//platforms:linux_x86_64_musl
+build:musl --host_platform=@llvm//platforms:linux_x86_64_musl
+build:linux --config=musl
+
+test --test_output=errors
+
+# BuildBuddy RBE.
+build:remote --config=musl
+build:remote --remote_executor=grpcs://buildbuddy.buildbuddy.io
+build:remote --remote_cache=grpcs://buildbuddy.buildbuddy.io
+build:remote --bes_backend=grpcs://buildbuddy.buildbuddy.io
+build:remote --bes_results_url=https://buildbuddy.buildbuddy.io/invocation/
+build:remote --remote_download_minimal
+build:remote --jobs=100
+
+# A local remote executor (actiond) at 127.0.0.1:8980: every action runs in
+# its VM, none on this host.
+build:actiond --config=musl
+build:actiond --remote_executor=grpc://127.0.0.1:8980
+build:actiond --remote_cache=grpc://127.0.0.1:8980
+build:actiond --spawn_strategy=remote
+build:actiond --genrule_strategy=remote
+build:actiond --remote_local_fallback=false
+build:actiond --remote_upload_local_results=false
+build:actiond --noremote_cache_compression
+
+try-import %workspace%/user.bazelrc
