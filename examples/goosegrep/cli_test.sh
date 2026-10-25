@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # Usage: cli_test.sh <goosegrep> <expected/NAME.out> <expected exit code> [args...]
-# Copies the testdata tree beside expected/ (runfiles may be symlinks, which goosegrep's walk
-# skips), runs $SETUP in the copy, then goosegrep with the args, and checks
-# its exit code and its stdout.
+# Copies the testdata tree beside expected/ (runfiles may be symlinks, which
+# goosegrep's walk skips), runs $SETUP in the copy, then goosegrep with the
+# args, and checks its exit code and its stdout.
 set -uo pipefail
 prog="$PWD/$1"
 expected_rel="$2"
