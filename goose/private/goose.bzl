@@ -1,94 +1,77 @@
-"""Implementation of goose_binary and goose_test.
+"""goose_c: compiles a Goose program to one standalone C file.
 
-A Goose program is built in two steps:
-
-1. `goose_c`, the private rule here, stages the program's sources and the
-   standard library into one tree and runs the Goose compiler on it, writing a
-   single standalone C file (`goose --standalone -o <name>.c`).
-2. `cc_binary` or `cc_test` compiles and links that C file with whatever C
-   toolchain the build has registered.
+The program's sources and the standard library are staged into one tree, and
+the Goose compiler runs on it, writing `goose --standalone -o <name>.c`.
+goose_binary and goose_test (defs.bzl) build that file with cc_binary or
+cc_test.
 """
 
-load("@rules_cc//cc:cc_binary.bzl", "cc_binary")
-load("@rules_cc//cc:cc_test.bzl", "cc_test")
 load("@rules_cc//cc/common:cc_common.bzl", "cc_common")
 load("@rules_cc//cc/common:cc_info.bzl", "CcInfo")
 
-# What the standalone runtime needs at link time.
-_LINK_FLAGS = ["-lm", "-pthread", "-ldl"]
-
-def _package_prefix(label):
-    """The short_path prefix of files in `label`'s package, with a trailing slash."""
-    parts = []
-    if label.workspace_name:
-        parts.append("../" + label.workspace_name)
-    if label.package:
-        parts.append(label.package)
-    return "/".join(parts) + "/" if parts else ""
-
-def _relative_to(f, prefix, what, main):
-    if not f.short_path.startswith(prefix):
-        fail("%s %s is not in the package of main (%s), or below it: Goose resolves imports " %
-             (what, f.short_path, main.short_path) +
-             "relative to the main file, so every file of the program must be under its package")
-    return f.short_path[len(prefix):]
+def _repo_path(f):
+    """f's path relative to the root of its repository."""
+    if f.owner.workspace_name:
+        return f.short_path[len("../" + f.owner.workspace_name + "/"):]
+    return f.short_path
 
 def _goose_c_impl(ctx):
     main = ctx.file.main
-    prefix = _package_prefix(main.owner)
+    repo = main.owner.workspace_name
+    pkg = main.owner.package
+    prefix = pkg + "/" if pkg else ""
     stage = "_goose/%s" % ctx.label.name
 
-    # Every file of the program, by its path relative to main's package. The
-    # compiler runs from <stage>/src, so it sees the same tree on every
-    # machine, and the paths it writes into the C (in messages and the like)
-    # are these relative ones.
-    files = {}
-    for what, group in [("main", [main]), ("srcs", ctx.files.srcs), ("c_hdrs", ctx.files.c_hdrs)]:
-        for f in group:
-            rel = _relative_to(f, prefix, what, main)
-            if rel.endswith(".build"):
-                # The compiler reads a package's `<name>.build` sidecar
-                # silently, and with -o it ignores its C sources; native code
-                # goes through cc_deps and c_hdrs instead.
-                fail("%s: %s is a Goose sidecar (.build) file, which rules_goose does not support: " %
-                     (what, f.short_path) +
-                     "build the C with cc_library and pass it in cc_deps (and its header in c_hdrs)")
-            if rel in files and files[rel] != f:
-                fail("two files stage to %s: %s and %s" % (rel, files[rel].path, f.path))
-            files[rel] = f
-
-    staged = {}
-    for rel, f in files.items():
+    # main and srcs, by their path relative to main's package: Goose resolves
+    # imports relative to the main file. The compiler runs from <stage>/src,
+    # so it sees the same tree on every machine, and the paths it writes into
+    # the C (in messages and the like) are these relative ones.
+    staged = []
+    main_rel = _repo_path(main)[len(prefix):]
+    for f in [main] + ctx.files.srcs:
+        path = _repo_path(f)
+        if f.owner.workspace_name != repo or not path.startswith(prefix):
+            fail(("%s is not in the package of main (@%s//%s) or below it. Goose resolves imports " +
+                  "relative to the main file, so main and srcs must all be under main's package. " +
+                  "(C headers go in c_hdrs, which may come from any package.)") % (f.owner, repo, pkg))
+        rel = path[len(prefix):]
+        if rel.endswith(".build"):
+            # The compiler reads a package's `<name>.build` sidecar silently,
+            # and with -o it ignores its C sources; native code goes through
+            # cc_deps and c_hdrs instead.
+            fail("%s is a Goose sidecar (.build) file, which rules_goose does not support: " % f.owner +
+                 "build the C with cc_library and pass it in cc_deps (and its header in c_hdrs)")
         out = ctx.actions.declare_file("%s/src/%s" % (stage, rel))
         ctx.actions.symlink(output = out, target_file = f)
-        staged[rel] = out
+        staged.append(out)
+    src_dir = staged[0].path[:-len(main_rel) - 1]
 
     # The standard library, beside the sources as <stage>/stdlib.
-    stdlib = []
     for f in ctx.files._stdlib:
-        rel = f.short_path[len(_package_prefix(f.owner)):]
-        if not rel.startswith("stdlib/"):
-            fail("unexpected file in the Goose standard library: " + f.short_path)
-        out = ctx.actions.declare_file("%s/%s" % (stage, rel))
+        out = ctx.actions.declare_file("%s/%s" % (stage, _repo_path(f)))
         ctx.actions.symlink(output = out, target_file = f)
-        stdlib.append(out)
+        staged.append(out)
 
-    main_rel = _relative_to(main, prefix, "main", main)
-    src_dir = staged[main_rel].path[:-len(main_rel) - 1]
+    # The compiler only writes `#include "<name>"` for a c_hdrs header; it
+    # never reads it. Each header is named by its path in its repository, and
+    # that repository's root goes on the C compile's quote include path, so
+    # the header is included where it is, beside its own siblings.
+    hdr_names = [_repo_path(h) for h in ctx.files.c_hdrs]
+    hdr_roots = ["/".join([p for p in [h.root.path, h.owner.workspace_root] if p]) or "." for h in ctx.files.c_hdrs]
 
+    compiler = ctx.attr._compiler[DefaultInfo].files_to_run
     args = ctx.actions.args()
-    args.add(ctx.executable._compiler)
+    args.add(compiler.executable)
     args.add(ctx.outputs.out)
     args.add(src_dir)
     args.add(main_rel)
     args.add_all(ctx.attr.goose_opts)
-    for h in ctx.files.c_hdrs:
-        args.add("--include", _relative_to(h, prefix, "c_hdrs", main))
+    args.add_all(hdr_names, before_each = "--include")
 
     ctx.actions.run_shell(
         outputs = [ctx.outputs.out],
-        inputs = depset(staged.values() + stdlib),
-        tools = [ctx.executable._compiler],
+        inputs = staged,
+        tools = [compiler],
         arguments = [args],
         mnemonic = "GooseCompile",
         progress_message = "Compiling Goose program %{label}",
@@ -108,8 +91,10 @@ here_logical="$(pwd)"
 # The compiler's progress goes to stdout, its errors to stderr.
 GOOSE_HOME="$goose_home" \\
     "$compiler" --standalone --offline --stdlib ../stdlib "$@" -o "$out" "$main" > /dev/null
-# Path packages (import x from "./dir") are named by absolute path in the C;
-# make those paths relative to the source tree, so the C is the same everywhere.
+# Path packages (import x from "./dir") are named by absolute path in the C,
+# only ever in the NUL-terminated file names of abort locations
+# (`static const char gs_fileN[] = "...";`); make those paths relative to the
+# source tree, so the C is the same everywhere.
 c="$(< "$out")"
 if [[ "$c" == *"$here_physical/"* || "$c" == *"$here_logical/"* ]]; then
   c="${c//"$here_physical/"/}"
@@ -119,24 +104,12 @@ fi
 """,
     )
 
-    compilation_context = cc_common.create_compilation_context(
-        headers = depset([staged[_relative_to(h, prefix, "c_hdrs", main)] for h in ctx.files.c_hdrs]),
-        # The C names an --include header by its path relative to main's
-        # package, which is where it is staged.
-        quote_includes = depset([src_dir]),
-    )
-    linking_context = cc_common.create_linking_context(
-        linker_inputs = depset([cc_common.create_linker_input(
-            owner = ctx.label,
-            user_link_flags = depset(_LINK_FLAGS),
-        )]),
-    )
     return [
         DefaultInfo(files = depset([ctx.outputs.out])),
-        CcInfo(
-            compilation_context = compilation_context,
-            linking_context = linking_context,
-        ),
+        CcInfo(compilation_context = cc_common.create_compilation_context(
+            headers = depset(ctx.files.c_hdrs),
+            quote_includes = depset(hdr_roots),
+        )),
     ]
 
 goose_c = rule(
@@ -160,36 +133,3 @@ goose_c = rule(
     },
     provides = [CcInfo],
 )
-
-# Attributes the generated C target shares with the cc rule.
-_SHARED_ATTRS = ["tags", "testonly", "target_compatible_with", "compatible_with", "restricted_to"]
-
-def goose_program(cc_rule, is_test, name, main, srcs = [], c_hdrs = [], cc_deps = [], goose_opts = [], deps = None, **kwargs):
-    """Shared helper of goose_binary and goose_test."""
-    if deps != None:
-        fail("goose_binary and goose_test take cc_deps, not deps")
-    shared = {k: kwargs[k] for k in _SHARED_ATTRS if k in kwargs}
-    if is_test:
-        shared["testonly"] = True
-    goose_c(
-        name = name + "_goose",
-        main = main,
-        srcs = srcs,
-        c_hdrs = c_hdrs,
-        goose_opts = goose_opts,
-        out = name + ".c",
-        visibility = ["//visibility:private"],
-        **shared
-    )
-    cc_rule(
-        name = name,
-        srcs = [name + ".c"],
-        deps = [name + "_goose"] + cc_deps,
-        **kwargs
-    )
-
-def goose_binary_impl(**kwargs):
-    goose_program(cc_binary, False, **kwargs)
-
-def goose_test_impl(**kwargs):
-    goose_program(cc_test, True, **kwargs)
