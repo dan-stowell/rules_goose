@@ -1,7 +1,8 @@
 """analysis_failure_test: passes when a target fails analysis with a message."""
 
 def _impl(ctx):
-    messages = [c.message for c in ctx.attr.target[AnalysisFailureInfo].causes.to_list()]
+    # An attribute with a transition is a list, even of one target.
+    messages = [c.message for c in ctx.attr.target[0][AnalysisFailureInfo].causes.to_list()]
     ok = [m for m in messages if ctx.attr.message in m]
     return [AnalysisTestResultInfo(
         success = bool(ok),
