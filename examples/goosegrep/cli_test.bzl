@@ -1,4 +1,4 @@
-"""cli_test and cli_tests: run goosegrep over a copy of testdata/ and checks its stdout and exit code."""
+"""cli_test and cli_tests: run goosegrep over a copy of testdata/ and check its stdout and exit code."""
 
 load("@rules_shell//shell:sh_test.bzl", "sh_test")
 
@@ -21,7 +21,6 @@ def cli_test(name, args, expected = None, exit_code = 0, setup = ""):
         srcs = ["cli_test.sh"],
         args = [
             "$(rootpath :goosegrep)",
-            "$(rootpath testdata/README.md)",
             "$(rootpath %s)" % expected,
             str(exit_code),
         ] + args,

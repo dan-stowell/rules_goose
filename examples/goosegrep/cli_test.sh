@@ -1,15 +1,15 @@
 #!/usr/bin/env bash
-# Usage: cli_test.sh <goosegrep> <a file in testdata/> <expected stdout> <expected exit code> [args...]
-# Copies the testdata tree (runfiles may be symlinks, which goosegrep's walk
+# Usage: cli_test.sh <goosegrep> <expected/NAME.out> <expected exit code> [args...]
+# Copies the testdata tree beside expected/ (runfiles may be symlinks, which goosegrep's walk
 # skips), runs $SETUP in the copy, then goosegrep with the args, and checks
 # its exit code and its stdout.
 set -uo pipefail
 prog="$PWD/$1"
-tree="$(dirname "$2")"
-expected_rel="$3"
-expected="$PWD/$3"
-want_code="$4"
-shift 4
+expected_rel="$2"
+expected="$PWD/$2"
+tree="$(dirname "$(dirname "$expected")")/testdata"
+want_code="$3"
+shift 3
 got="$TEST_TMPDIR/got"
 copy="$TEST_TMPDIR/tree"
 mkdir -p "$copy" && cp -RL "$tree/." "$copy" || exit 1
