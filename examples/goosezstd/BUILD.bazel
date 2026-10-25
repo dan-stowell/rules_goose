@@ -98,6 +98,22 @@ genrule(
     testonly = True,
 )
 
+# 1 MiB of bytes drawn from an exponential distribution: Huffman literals
+# over ~90 symbols, the rarest far below 2^-11, so zstd limits the code
+# lengths to the maximum, 11 bits.
+genrule(
+    name = "skewed",
+    outs = ["skewed.bin"],
+    cmd = """LC_ALL=C awk 'BEGIN {
+        srand(1)
+        for (i = 0; i < 1048576; i++) {
+            s = int(-log(1 - rand()) * 6)
+            printf "%c", (s > 255 ? 255 : s)
+        }
+    }' > $@""",
+    testonly = True,
+)
+
 genrule(
     name = "empty",
     outs = ["empty.bin"],
@@ -120,6 +136,7 @@ INPUTS = {
     "mixed": ":mixed.bin",
     "noise": ":noise.bin",
     "one_byte": ":one_byte.bin",
+    "skewed": ":skewed.bin",
     # A Doom level (Freedoom, from Goose's mini_doom sample): 4.8 MB of binary.
     "wad": "@goose_src//:samples/data/freedoom1-e1m1.wad",
     "zeros": ":zeros.bin",
@@ -182,6 +199,60 @@ decompress_test(
     compressed = ":multi_frame.zst",
     original = ":multi_frame.orig",
 )
+
+# ---- Edges of the decoder's fast paths ----------------------------------
+
+# Short Huffman streams (one stream below about 1 KB of literals), where the
+# four-codes-at-a-time loop runs briefly or not at all.
+[genrule(
+    name = "lorem_%d" % n,
+    srcs = [":lorem.txt"],
+    outs = ["lorem_%d.txt" % n],
+    cmd = "head -c %d $< > $@" % n,
+    testonly = True,
+) for n in [100, 300, 1000]]
+
+[zstd_compress(
+    name = "lorem_%d_l19" % n,
+    src = ":lorem_%d.txt" % n,
+    flags = "-19",
+) for n in [100, 300, 1000]]
+
+[decompress_test(
+    name = "lorem_%d_l19_test" % n,
+    compressed = ":lorem_%d_l19.zst" % n,
+    original = ":lorem_%d.txt" % n,
+) for n in [100, 300, 1000]]
+
+# Long offsets and literal lengths: 1 MiB of noise A, 16 MiB of noise, 100
+# KiB of noise, then A with a byte inserted after every 0x01. With --long,
+# the last part is thousands of matches about 17 MiB back (24 offset bits),
+# each at a new offset, and the block it starts in opens with a sequence of
+# over 64 KiB of literals (the largest literal length code, 16 extra bits).
+genrule(
+    name = "far",
+    outs = ["far.bin"],
+    cmd = """
+        d=$(execpath %s)
+        { $$d -g1M -P0 -s7; $$d -g16M -P0 -s8; $$d -g100K -P0 -s9
+          $$d -g1M -P0 -s7 | LC_ALL=C sed 's/\\x01/\\x01g/g'; } > $@
+    """ % DATAGEN,
+    tools = [DATAGEN],
+    testonly = True,
+)
+
+[zstd_compress(
+    name = "far_" + n,
+    src = ":far.bin",
+    flags = f,
+) for n, f in [("long", "-3 --long=27"), ("l19_long", "-19 --long=27")]]
+
+[decompress_test(
+    name = "far_%s_test" % n,
+    size = "medium",
+    compressed = ":far_%s.zst" % n,
+    original = ":far.bin",
+) for n in ["long", "l19_long"]]
 
 # ---- Damaged input is rejected ------------------------------------------
 
@@ -288,4 +359,55 @@ sh_test(
         ZSTD,
     ],
     tags = ["exclusive"],
+)
+
+# Throughput of goosezstd, the libzstd demo and the zstd CLI, best, median
+# and worst of five runs each (bb view ... :perf_bench_test). Run it on
+# its own:
+#   bb remote test //examples/goosezstd:perf_bench_test -c opt
+genrule(
+    name = "big_text",
+    outs = ["big_text.txt"],
+    cmd = "$(execpath %s) -g64M -s5 > $@" % DATAGEN,
+    tools = [DATAGEN],
+    testonly = True,
+)
+
+zstd_compress(
+    name = "big_text_l3",
+    src = ":big_text.txt",
+    flags = "-3",
+)
+
+PERF_DECODERS = {
+    "zstd": ZSTD,
+    "libzstd_demo": ":libzstd_demo",
+    "goosezstd": ":goosezstd",
+}
+
+PERF_INPUTS = [
+    (":big.bin", ":big_l3.zst"),
+    (":big.bin", ":big_l19.zst"),
+    (":big_text.txt", ":big_text_l3.zst"),
+]
+
+sh_test(
+    name = "perf_bench_test",
+    size = "large",
+    srcs = ["perf_bench_test.sh"],
+    args = ["5"] +
+           ["%s=$(rootpath %s)" % (n, d) for n, d in PERF_DECODERS.items()] +
+           ["--"] +
+           ["$(rootpath %s)" % f for pair in PERF_INPUTS for f in pair],
+    data = PERF_DECODERS.values() + [
+        ":big.bin",
+        ":big_l19.zst",
+        ":big_l3.zst",
+        ":big_text.txt",
+        ":big_text_l3.zst",
+    ],
+    tags = [
+        "exclusive",
+        "manual",
+    ],
 )
