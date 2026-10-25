@@ -5,6 +5,7 @@
 set -uo pipefail
 prog="$PWD/$1"
 tree="$(dirname "$2")"
+expected_rel="$3"
 expected="$PWD/$3"
 want_code="$4"
 shift 4
@@ -18,7 +19,7 @@ if [[ "$code" != "$want_code" ]]; then
   fail=1
 fi
 if ! diff -u "$expected" "$got" >&2; then
-  echo "FAIL: stdout of goosegrep $* differs from $3" >&2
+  echo "FAIL: stdout of goosegrep $* differs from $expected_rel" >&2
   fail=1
 fi
 if [[ "$fail" == 0 ]]; then echo "PASS: goosegrep $*"; fi
