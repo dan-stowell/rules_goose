@@ -26,7 +26,14 @@ def _goose_c_impl(ctx):
     # imports relative to the main file. The compiler runs from <stage>/src,
     # so it sees the same tree on every machine, and the paths it writes into
     # the C (in messages and the like) are these relative ones.
+    #
+    # The compiler writes each c_hdrs header's include name relative to the
+    # output .c whenever that name is a file from <stage>/src, which would make
+    # the C include the staged copy (not an input of the C compile); so a
+    # staged file (or a directory above one) may not have a c_hdrs header's name.
+    hdr_names = [_repo_path(h) for h in ctx.files.c_hdrs]
     staged = []
+    staged_by_rel = {}
     main_rel = _repo_path(main)[len(prefix):]
     for f in [main] + ctx.files.srcs:
         path = _repo_path(f)
@@ -41,6 +48,20 @@ def _goose_c_impl(ctx):
             # cc_deps and c_hdrs instead.
             fail("%s is a Goose sidecar (.build) file, which rules_goose does not support: " % f.owner +
                  "build the C with cc_library and pass it in cc_deps (and its header in c_hdrs)")
+        if rel in staged_by_rel:
+            # main also in srcs (srcs = glob(["*.goose"])), or a file listed twice.
+            if staged_by_rel[rel] != f:
+                fail("%s and %s are both staged as %s" % (staged_by_rel[rel].owner, f.owner, rel))
+            continue
+        parts = rel.split("/")
+        clash = [n for n in ["/".join(parts[:i + 1]) for i in range(len(parts))] if n in hdr_names]
+        if clash:
+            # The compiler's check also takes a directory of that name.
+            fail(("%s is staged as %s, which is (or is under) the include name of a c_hdrs header, so the " +
+                  "generated C would include the staged copy instead of the header. Leave it " +
+                  "out of srcs: a header can be in both only when main is outside its repository's root " +
+                  "package.") % (f.owner, rel))
+        staged_by_rel[rel] = f
         out = ctx.actions.declare_file("%s/src/%s" % (stage, rel))
         ctx.actions.symlink(output = out, target_file = f)
         staged.append(out)
@@ -55,9 +76,9 @@ def _goose_c_impl(ctx):
     # The compiler only writes `#include "<name>"` for a c_hdrs header; it
     # never reads it. Each header is named by its path in its repository, and
     # that repository's root goes on the C compile's quote include path, so
-    # the header is included where it is, beside its own siblings.
-    hdr_names = [_repo_path(h) for h in ctx.files.c_hdrs]
-    hdr_roots = ["/".join([p for p in [h.root.path, h.owner.workspace_root] if p]) or "." for h in ctx.files.c_hdrs]
+    # the header is included where it is, beside its own siblings. The root is
+    # the header's path minus its name, whatever the output layout.
+    hdr_roots = [h.path[:-len(name)].rstrip("/") or "." for h, name in zip(ctx.files.c_hdrs, hdr_names)]
 
     compiler = ctx.attr._compiler[DefaultInfo].files_to_run
     args = ctx.actions.args()

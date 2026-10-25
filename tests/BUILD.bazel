@@ -4,6 +4,8 @@
 
 load("@rules_shell//shell:sh_test.bzl", "sh_test")
 load("//goose:defs.bzl", "goose_binary", "goose_test")
+load("//goose/private:goose.bzl", "goose_c")
+load(":analysis_failure_test.bzl", "analysis_failure_test")
 load(":sample_test.bzl", "sample_test")
 
 # samples/01_tour.goose: the core language.
@@ -111,4 +113,23 @@ sh_test(
         "'assert failed (fails.goose:7)'",
     ],
     data = [":fails_test"],
+)
+
+# A staged file named like a c_hdrs header's include name is an error: the
+# compiler would point the include at the staged copy. @goose_src's files are
+# in its root package, so call_c.h in srcs is staged as samples/call_c.h, its
+# include name.
+goose_c(
+    name = "hdr_in_srcs_at_root",
+    srcs = ["@goose_src//:samples/call_c.h"],
+    c_hdrs = ["@goose_src//:samples/call_c.h"],
+    main = "@goose_src//:samples/24_call_c.goose",
+    out = "hdr_in_srcs_at_root.c",
+    tags = ["manual"],
+)
+
+analysis_failure_test(
+    name = "hdr_in_srcs_at_root_test",
+    message = "the include name of a c_hdrs header",
+    target = ":hdr_in_srcs_at_root",
 )

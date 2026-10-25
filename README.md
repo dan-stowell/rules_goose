@@ -43,7 +43,7 @@ goose_test(name = "hello_test", main = "hello_test.goose", size = "small")
 | `c_hdrs`     | Headers for `extern fn`s, passed as `--include`; any package. |
 | `cc_deps`    | `cc_library` targets to link. |
 | `goose_opts` | Extra compiler flags: `-O2`, `--debug`, `-DNAME=value`, ... |
-| others       | Passed to `cc_binary` / `cc_test` (`deps` is rejected; use `cc_deps`). |
+| others       | Passed to `cc_binary` / `cc_test` (a non-empty `deps` is rejected; use `cc_deps`). |
 
 The docstring in `goose/defs.bzl` is the full reference.
 
@@ -58,6 +58,12 @@ The docstring in `goose/defs.bzl` is the full reference.
   `cc_library` and use `cc_deps`/`c_hdrs`).
 - A `c_hdrs` header is included as its path in its repository
   (`#include "native/foo.h"`), and stays beside its own sibling headers.
+  It may be in `srcs` too (for `embed_file`), unless that stages it under its
+  include name, as when main is in its repository's root package.
+- Known limit: two `c_hdrs` headers with the same path in different
+  repositories collide on that include name.
+- Known limit: execution-root paths with characters Goose escapes in C strings
+  (quotes, non-ASCII) are not rewritten out of the generated C.
 - `--offline`: nothing is fetched and no package cache is read, so git packages
   and the blessed packages from other repositories (gfx, audio, ui, physics)
   are unavailable; vendor their `.goose` files and import them as path packages.

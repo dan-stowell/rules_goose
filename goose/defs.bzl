@@ -29,8 +29,8 @@ load("//goose/private:goose.bzl", "goose_c")
 # Attributes the generated C target shares with the cc rule.
 _SHARED_ATTRS = ["tags", "testonly", "visibility", "target_compatible_with", "compatible_with", "restricted_to"]
 
-def _goose_program(cc_rule, name, main, srcs = [], c_hdrs = [], cc_deps = [], goose_opts = [], deps = None, linkopts = [], **kwargs):
-    if deps != None:
+def _goose_program(cc_rule, name, main, srcs = [], c_hdrs = [], cc_deps = [], goose_opts = [], deps = [], linkopts = [], **kwargs):
+    if deps:
         fail("goose_binary and goose_test take cc_deps, not deps")
     goose_c(
         name = name + "_goose",

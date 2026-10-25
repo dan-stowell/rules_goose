@@ -1,0 +1,11 @@
+load("//goose:defs.bzl", "goose_test")
+
+# srcs that also hold main (glob(["*.goose"])), and an empty deps: main is
+# staged once, and deps = [] is accepted.
+goose_test(
+    name = "glob_test",
+    size = "small",
+    srcs = glob(["*.goose"]),
+    deps = [],
+    main = "main.goose",
+)
