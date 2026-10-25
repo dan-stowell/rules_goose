@@ -1,0 +1,31 @@
+# Development settings for this repository. Users of rules_goose do not
+# inherit these.
+
+# This repository builds with hermetic-llvm (a dev dependency in MODULE.bazel),
+# targeting static musl, so the Goose compiler (which runs in the exec
+# configuration) and the test programs run on any x86-64 Linux, whatever its
+# glibc. musl is linked statically only, so tests (cc_test defaults to dynamic)
+# are too.
+build --platforms=@llvm//platforms:linux_x86_64_musl
+build --host_platform=@llvm//platforms:linux_x86_64_musl
+build --dynamic_mode=off
+
+# glibc instead (2.28 or newer at run time), linked dynamically: cc_test links
+# its cc_library deps as shared libraries.
+build:glibc --platforms=@llvm//platforms:linux_x86_64_gnu.2.28
+build:glibc --host_platform=@llvm//platforms:linux_x86_64_gnu.2.28
+build:glibc --dynamic_mode=default
+# BuildBuddy's default executor image predates glibc 2.28.
+build:glibc --remote_default_exec_properties=container-image=docker://gcr.io/flame-public/rbe-ubuntu22-04:latest
+
+test --test_output=errors
+
+# BuildBuddy RBE.
+build:remote --remote_executor=grpcs://buildbuddy.buildbuddy.io
+build:remote --remote_cache=grpcs://buildbuddy.buildbuddy.io
+build:remote --bes_backend=grpcs://buildbuddy.buildbuddy.io
+build:remote --bes_results_url=https://buildbuddy.buildbuddy.io/invocation/
+build:remote --remote_download_minimal
+build:remote --jobs=100
+
+try-import %workspace%/user.bazelrc

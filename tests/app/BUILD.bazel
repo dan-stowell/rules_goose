@@ -1,0 +1,27 @@
+load("//goose:defs.bzl", "goose_test")
+
+# extern fn implemented by a cc_library in another package: c_hdrs from that
+# package, cc_deps for the code. //tests:c_has_no_build_paths_test reads
+# native_test.c from outside this package.
+goose_test(
+    name = "native_test",
+    size = "small",
+    c_hdrs = ["//tests/native:foo.h"],
+    cc_deps = ["//tests/native:foo"],
+    main = "main.goose",
+    visibility = ["//tests:__pkg__"],
+)
+
+# A generated header in c_hdrs: its quote include root is the output tree.
+genrule(
+    name = "gen_h",
+    outs = ["gen/gen.h"],
+    cmd = "echo 'static int64_t gen_value(void) { return 42; }' > $@",
+)
+
+goose_test(
+    name = "gen_hdr_test",
+    size = "small",
+    c_hdrs = [":gen/gen.h"],
+    main = "gen_hdr.goose",
+)

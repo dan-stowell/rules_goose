@@ -1,0 +1,10 @@
+load("//goose:defs.bzl", "goose_test")
+
+# A header in both c_hdrs (for its extern fn) and srcs (read by embed_file).
+goose_test(
+    name = "embed_hdr_test",
+    size = "small",
+    srcs = ["native.h"],
+    c_hdrs = ["native.h"],
+    main = "main.goose",
+)
