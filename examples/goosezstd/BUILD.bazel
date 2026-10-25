@@ -246,6 +246,43 @@ decompress_test(
     original = ":multi_frame.orig",
 )
 
+# Content an exact multiple of ZSTD_DStreamOutSize() (128 KiB), so the last
+# call that finishes the frame also fills the output buffer.
+[genrule(
+    name = "exact_%s" % s,
+    outs = ["exact_%s.bin" % s],
+    cmd = "$(execpath %s) -g%s -P60 -s4 > $@" % (DATAGEN, s),
+    tools = [DATAGEN],
+    testonly = True,
+) for s in ["128K", "256K"]]
+
+[zstd_compress(
+    name = "exact_%s_l3" % s,
+    src = ":exact_%s.bin" % s,
+    flags = "-3",
+) for s in ["128K", "256K"]]
+
+[decompress_test(
+    name = "libzstd_demo_exact_%s_test" % s,
+    compressed = ":exact_%s_l3.zst" % s,
+    decoder = ":libzstd_demo",
+    original = ":exact_%s.bin" % s,
+) for s in ["128K", "256K"]]
+
+sh_test(
+    name = "libzstd_demo_reject_test",
+    size = "small",
+    srcs = ["reject_test.sh"],
+    args = [
+        "$(rootpath :libzstd_demo)",
+        "$(rootpath :truncated.zst)",
+    ],
+    data = [
+        ":libzstd_demo",
+        ":truncated.zst",
+    ],
+)
+
 # ---- Throughput, against the real zstd ----------------------------------
 
 genrule(
