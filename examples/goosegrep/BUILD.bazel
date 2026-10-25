@@ -1,7 +1,7 @@
 # goosegrep: a small ripgrep in Goose, and its tests.
 
 load("//goose:defs.bzl", "goose_binary", "goose_test")
-load(":cli_test.bzl", "cli_test")
+load(":cli_test.bzl", "cli_tests")
 
 # The walk lists directories through dir_shim.h, a little C called with
 # `extern fn` (the os module's list_dir follows symlinks and joins names with
@@ -41,7 +41,7 @@ filegroup(
     ],
 )
 
-# Each case runs `goosegrep <args>` in a copy of testdata/ (after `setup`,
+# Each case (a cli_test) runs `goosegrep <args>` in a copy of testdata/ (after `setup`,
 # if any) and checks stdout against expected/<name>.out (or `expected`) and
 # the exit code (0: a line was selected, 1: none, 2: an error).
 CASES = [
@@ -96,4 +96,4 @@ CASES = [
     dict(name = "newline_name", args = ["-l", "goose"], setup = "echo goose > $$'new\\nline.txt'"),
 ]
 
-[cli_test(**case) for case in CASES]
+cli_tests(CASES)

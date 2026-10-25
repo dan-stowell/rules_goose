@@ -1,4 +1,4 @@
-"""cli_test: runs goosegrep over a copy of testdata/ and checks its stdout and exit code."""
+"""cli_test and cli_tests: run goosegrep over a copy of testdata/ and checks its stdout and exit code."""
 
 load("@rules_shell//shell:sh_test.bzl", "sh_test")
 
@@ -32,3 +32,8 @@ def cli_test(name, args, expected = None, exit_code = 0, setup = ""):
         ],
         env = {"SETUP": setup},
     )
+
+def cli_tests(cases):
+    """A cli_test for each case: a dict of cli_test's arguments."""
+    for case in cases:
+        cli_test(**case)
