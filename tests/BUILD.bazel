@@ -130,6 +130,6 @@ goose_c(
 
 analysis_failure_test(
     name = "hdr_in_srcs_at_root_test",
-    message = "which is also the include name of a c_hdrs header",
+    message = "the include name of a c_hdrs header",
     target = ":hdr_in_srcs_at_root",
 )

@@ -30,7 +30,7 @@ def _goose_c_impl(ctx):
     # The compiler writes each c_hdrs header's include name relative to the
     # output .c whenever that name is a file from <stage>/src, which would make
     # the C include the staged copy (not an input of the C compile); so a
-    # staged file may not have a c_hdrs header's name.
+    # staged file (or a directory above one) may not have a c_hdrs header's name.
     hdr_names = [_repo_path(h) for h in ctx.files.c_hdrs]
     staged = []
     staged_by_rel = {}
@@ -53,8 +53,11 @@ def _goose_c_impl(ctx):
             if staged_by_rel[rel] != f:
                 fail("%s and %s are both staged as %s" % (staged_by_rel[rel].owner, f.owner, rel))
             continue
-        if rel in hdr_names:
-            fail(("%s is staged as %s, which is also the include name of a c_hdrs header, so the " +
+        parts = rel.split("/")
+        clash = [n for n in ["/".join(parts[:i + 1]) for i in range(len(parts))] if n in hdr_names]
+        if clash:
+            # The compiler's check also takes a directory of that name.
+            fail(("%s is staged as %s, which is (or is under) the include name of a c_hdrs header, so the " +
                   "generated C would include the staged copy instead of the header. Leave it " +
                   "out of srcs: a header can be in both only when main is outside its repository's root " +
                   "package.") % (f.owner, rel))
