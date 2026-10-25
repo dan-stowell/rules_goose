@@ -1,0 +1,17 @@
+load("@rules_cc//cc:cc_library.bzl", "cc_library")
+
+# C behind an extern fn, in a package of its own (see //tests/app).
+cc_library(
+    name = "foo",
+    srcs = ["foo.c"],
+    hdrs = [
+        "foo.h",
+        "foo_detail.h",
+    ],
+    visibility = ["//tests/app:__pkg__"],
+)
+
+exports_files(
+    ["foo.h"],
+    visibility = ["//tests/app:__pkg__"],
+)

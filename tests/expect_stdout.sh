@@ -9,20 +9,4 @@ expected="$2"
 shift 2
 want="$(< "$expected")"
 got="$("$prog" "$@")"
-if [[ "$got" != "$want" ]]; then
-  echo "FAIL: stdout of $prog differs from $expected" >&2
-  mapfile -t w <<< "$want"
-  mapfile -t g <<< "$got"
-  for ((i = 0; i < ${#w[@]} || i < ${#g[@]}; i++)); do
-    if [[ "${w[i]-<missing>}" != "${g[i]-<missing>}" ]]; then
-      echo "first difference at line $((i + 1)):" >&2
-      echo "  want: ${w[i]-<missing>}" >&2
-      echo "  got:  ${g[i]-<missing>}" >&2
-      break
-    fi
-  done
-  echo "--- got:" >&2
-  printf '%s\n' "$got" >&2
-  exit 1
-fi
-echo "PASS: stdout of $prog matches $expected"
+diff -u <(printf '%s\n' "$want") <(printf '%s\n' "$got")

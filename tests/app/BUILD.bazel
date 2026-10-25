@@ -1,0 +1,13 @@
+load("//goose:defs.bzl", "goose_test")
+
+# extern fn implemented by a cc_library in another package: c_hdrs from that
+# package, cc_deps for the code. //tests:c_has_no_build_paths_test reads
+# native_test.c from outside this package.
+goose_test(
+    name = "native_test",
+    size = "small",
+    c_hdrs = ["//tests/native:foo.h"],
+    cc_deps = ["//tests/native:foo"],
+    main = "main.goose",
+    visibility = ["//tests:__pkg__"],
+)

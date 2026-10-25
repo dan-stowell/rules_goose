@@ -3,7 +3,7 @@
 # tree (@goose_src, Apache-2.0, https://github.com/aardappel/goose).
 
 load("@rules_shell//shell:sh_test.bzl", "sh_test")
-load("//goose:defs.bzl", "goose_test")
+load("//goose:defs.bzl", "goose_binary", "goose_test")
 load(":sample_test.bzl", "sample_test")
 
 # samples/01_tour.goose: the core language.
@@ -46,7 +46,8 @@ sample_test(
 
 # The generated C names no build-specific path, so it is the same on every
 # machine and in every sandbox (pkg_basic has path packages, which the
-# compiler names by absolute path).
+# compiler names by absolute path). native_test.c is read from another
+# package, which its goose_test's visibility allows.
 sh_test(
     name = "c_has_no_build_paths_test",
     srcs = ["c_has_no_build_paths.sh"],
@@ -54,12 +55,36 @@ sh_test(
         "$(rootpath :pkg_basic.c)",
         "$(rootpath :call_c.c)",
         "$(rootpath :sieve.c)",
+        "$(rootpath :oob_abort.c)",
+        "$(rootpath //tests/app:native_test.c)",
     ],
     data = [
         ":call_c.c",
+        ":oob_abort.c",
         ":pkg_basic.c",
         ":sieve.c",
+        "//tests/app:native_test.c",
     ],
+)
+
+# A runtime abort in a path package names the file relative to the program.
+# The compiler sees it by absolute path, which the rule rewrites.
+goose_binary(
+    name = "oob_abort",
+    testonly = True,
+    srcs = ["oob/oob.goose"],
+    main = "oob_abort.goose",
+)
+
+sh_test(
+    name = "oob_abort_test",
+    size = "small",
+    srcs = ["expect_failure.sh"],
+    args = [
+        "$(rootpath :oob_abort)",
+        "'index 5 out of bounds (length 3) (oob/oob.goose:6)'",
+    ],
+    data = [":oob_abort"],
 )
 
 # goose_test: a Goose program that passes by exiting 0.
@@ -67,4 +92,23 @@ goose_test(
     name = "smoke_test",
     size = "small",
     main = "smoke_test.goose",
+)
+
+# A goose_test whose assert fails must fail. It is manual, so //... does not
+# run it; fails_test_fails runs it and passes only if it fails.
+goose_test(
+    name = "fails_test",
+    main = "fails.goose",
+    tags = ["manual"],
+)
+
+sh_test(
+    name = "fails_test_fails",
+    size = "small",
+    srcs = ["expect_failure.sh"],
+    args = [
+        "$(rootpath :fails_test)",
+        "'assert failed (fails.goose:7)'",
+    ],
+    data = [":fails_test"],
 )
