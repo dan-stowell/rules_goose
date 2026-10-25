@@ -31,6 +31,8 @@ build:actiond --genrule_strategy=remote
 build:actiond --remote_local_fallback=false
 build:actiond --remote_upload_local_results=false
 build:actiond --noremote_cache_compression
+# A small VM: some compiles (libc++) take over the default 60s.
+build:actiond --remote_timeout=3600
 # actiond's VM provides bash (and no other tools) only to actions that ask for
 # it, and Bazel's test.xml fallback needs cat and sed, so tests run under a
 # wrapper that writes test.xml itself.
