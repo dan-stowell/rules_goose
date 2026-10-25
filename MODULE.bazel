@@ -29,6 +29,9 @@ http_archive(
 bazel_dep(name = "rules_shell", version = "0.8.0", dev_dependency = True)
 bazel_dep(name = "llvm", version = "0.8.25", dev_dependency = True)
 
+# examples/goosezstd builds the real zstd CLI and libzstd to test against.
+bazel_dep(name = "zstd", version = "1.5.7.bcr.3", dev_dependency = True)
+
 register_toolchains(
     "@llvm//toolchain:all",
     dev_dependency = True,

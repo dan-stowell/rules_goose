@@ -1,0 +1,18 @@
+# goosezstd: a Zstandard decompressor written in Goose, tested against the
+# real zstd (the BCR module, built with the same C toolchain).
+
+load("//goose:defs.bzl", "goose_binary")
+
+goose_binary(
+    name = "goosezstd",
+    srcs = [
+        "zstd/bits.goose",
+        "zstd/block.goose",
+        "zstd/frame.goose",
+        "zstd/fse.goose",
+        "zstd/huffman.goose",
+        "zstd/xxhash.goose",
+    ],
+    goose_opts = ["-O2"],
+    main = "goosezstd.goose",
+)
