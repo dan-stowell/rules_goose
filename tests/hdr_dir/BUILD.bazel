@@ -1,0 +1,20 @@
+load("//goose/private:goose.bzl", "goose_c")
+load("//tests:analysis_failure_test.bzl", "analysis_failure_test")
+
+# A staged directory named like a c_hdrs header's include name is an error too:
+# the compiler takes a directory of that name as well. native.h's include name
+# is tests/hdr_dir/native.h, and child.goose is staged under that directory.
+goose_c(
+    name = "dir_named_like_hdr",
+    srcs = ["tests/hdr_dir/native.h/child.goose"],
+    c_hdrs = ["native.h"],
+    main = "main.goose",
+    out = "dir_named_like_hdr.c",
+    tags = ["manual"],
+)
+
+analysis_failure_test(
+    name = "dir_named_like_hdr_test",
+    message = "staged as tests/hdr_dir/native.h/child.goose, which is (or is under) the include name",
+    target = ":dir_named_like_hdr",
+)

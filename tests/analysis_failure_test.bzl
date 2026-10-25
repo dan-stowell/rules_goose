@@ -2,7 +2,13 @@
 
 def _impl(ctx):
     # An attribute with a transition is a list, even of one target.
-    messages = [c.message for c in ctx.attr.target[0][AnalysisFailureInfo].causes.to_list()]
+    target = ctx.attr.target[0]
+    if AnalysisFailureInfo not in target:
+        return [AnalysisTestResultInfo(
+            success = False,
+            message = "expected %s to fail analysis with a message containing %r, but it analyzed fine" % (target.label, ctx.attr.message),
+        )]
+    messages = [c.message for c in target[AnalysisFailureInfo].causes.to_list()]
     ok = [m for m in messages if ctx.attr.message in m]
     return [AnalysisTestResultInfo(
         success = bool(ok),
