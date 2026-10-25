@@ -76,6 +76,8 @@ fn huf_read_table(h: HufTable&, src: const u8[:]) -> i64 {
     // symbol order: so each weight's slots form one run.
     var count: i64[16] = [0; 16];
     for i in n { count[w[i & 255] & 15] += 1; }
+    // A complete tree has an even number, at least two, of the longest codes.
+    if count[1] < 2 || count[1] % 2 != 0 { corrupt("bad Huffman weights"); }
     var start: i64[16] = [0; 16];
     var at = 0;
     for wt in 1..maxbits + 1 {

@@ -90,7 +90,7 @@ fn decode_frame(src: const u8[:], out: u8[>..]&) -> i64 {
             p += 1;
         } else if kind == 2 {
             if p + size > src.len { corrupt("truncated compressed block"); }
-            decode_block(src[p..p + size], st, lits, out, frame_start);
+            decode_block(src[p..p + size], st, lits, out, frame_start, block_max);
             p += size;
         } else {
             corrupt("reserved block type");

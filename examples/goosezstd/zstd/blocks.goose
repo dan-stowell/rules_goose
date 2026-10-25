@@ -159,9 +159,10 @@ fn read_seq_table(t: FseTable&, ok: bool&, mode: i64, src: const u8[:],
 
 // Decodes the sequences section in src and executes it: literals from lits
 // and matches from earlier output, appended to out. A match may reach back
-// to frame_start, where this frame's output began, and no further.
+// to frame_start, where this frame's output began, and no further; the
+// block may produce at most block_max bytes.
 fn decode_sequences(src: const u8[:], st: FrameState&, lits: const u8[:],
-                    out: u8[>..]&, frame_start: i64) {
+                    out: u8[>..]&, frame_start: i64, block_max: i64) {
     if src.len == 0 { corrupt("missing sequences section"); }
     let b0: i64 = src[0];
     var nseq = 0;
@@ -179,6 +180,7 @@ fn decode_sequences(src: const u8[:], st: FrameState&, lits: const u8[:],
     }
     if nseq == 0 {
         if p != src.len { corrupt("data after an empty sequences section"); }
+        if lits.len > block_max { corrupt("block too large"); }
         out.append(lits);
         return;
     }
@@ -244,14 +246,15 @@ fn decode_sequences(src: const u8[:], st: FrameState&, lits: const u8[:],
         }
 
         if lp + ll > lits.len { corrupt("sequence needs more literals than there are"); }
+        if out.len - block_start + ll + ml > block_max { corrupt("block too large"); }
         out.append(lits[lp..lp + ll]);
         lp += ll;
         if off > out.len - frame_start { corrupt("match offset before the start of the frame"); }
         copy_match(out, off, ml);
     }
     if b.pos != 0 { corrupt("sequence stream size mismatch"); }
+    if out.len - block_start + lits.len - lp > block_max { corrupt("block too large"); }
     out.append(lits[lp..]);
-    if out.len - block_start > BLOCK_MAX { corrupt("block too large"); }
     st.reps = [r0, r1, r2];
 }
 
@@ -266,10 +269,11 @@ fn copy_match(out: u8[>..]&, off: i64, len: i64) {
     }
 }
 
-// Decodes one compressed block, appending its content to out. lits is the
-// caller's scratch buffer for the literals.
-fn decode_block(src: const u8[:], st: FrameState&, lits: u8[>..]&, out: u8[>..]&, frame_start: i64) {
+// Decodes one compressed block, appending its content (at most block_max
+// bytes) to out. lits is the caller's scratch buffer for the literals.
+fn decode_block(src: const u8[:], st: FrameState&, lits: u8[>..]&, out: u8[>..]&,
+                frame_start: i64, block_max: i64) {
     lits.clear();
     let used = decode_literals(src, st, lits);
-    decode_sequences(src[used..], st, lits, out, frame_start);
+    decode_sequences(src[used..], st, lits, out, frame_start, block_max);
 }
