@@ -28,14 +28,24 @@ fn main() {
     let fold = compiled("goose", search::Options { ignore_case: true, .. });
     assert(search::matches(fold, "A GoOsE", false));
 
-    // -w: a match touching a word byte does not count, and the search goes on.
     let goose = compiled("goose", plain);
     assert(search::matches(goose, "mongoose", false));
-    assert(!search::matches(goose, "mongoose", true));
-    assert(!search::matches(goose, "gooses", true));
-    assert(search::matches(goose, "goose", true));
-    assert(search::matches(goose, "mongoose, goose!", true));
-    assert(search::matches(goose, "(goose)", true));
+
+    // -w: a match must not touch a word byte on either side.
+    let wopts = search::Options { word: true, .. };
+    let word = compiled("goose", wopts);
+    assert(!search::matches(word, "mongoose", true));
+    assert(!search::matches(word, "gooses", true));
+    assert(search::matches(word, "goose", true));
+    assert(search::matches(word, "mongoose, goose!", true));
+    assert(search::matches(word, "(goose)", true));
+    // The alternatives get their turn: foobar is a word where foo is not.
+    let alt = compiled("foo|foobar", wopts);
+    assert(search::matches(alt, "a foobar b", true));
+    assert(!search::matches(alt, "foobars", true));
+    let wfixed = compiled("a.b", search::Options { fixed: true, word: true, .. });
+    assert(search::matches(wfixed, "x a.b y", true));
+    assert(!search::matches(wfixed, "xa.b", true));
 
     // Binary files have a NUL byte.
     let bin: u8[3] = ['a', 0, 'b'];

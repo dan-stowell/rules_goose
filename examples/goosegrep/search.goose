@@ -31,29 +31,25 @@ fn escape(out: u8[>..]&, s: u8[:]) {
 }
 
 // The regex the options make of a pattern. The engine has no anchors or
-// \b, so -w is checked by `matches` instead.
+// \b, so for -w the pattern goes between two \W, as rg's own -w puts it
+// between (?:^|\W) and (?:$|\W), and `matches` searches the line with a
+// space on either side, which stands for ^ and $.
 fn build_pattern(out: u8[>..]&, pattern: u8[:], o: Options) {
     if o.ignore_case { out.append("(?i)"); }
+    if o.word { out.append("\\W(?:"); }
     if o.fixed { escape(out, pattern); } else { out.append(pattern); }
+    if o.word { out.append(")\\W"); }
 }
 
-// Whether `line` holds a match (a whole-word one, for -w). For -w a match
-// that touches a word byte on either side does not count, and the search
-// goes on from the byte after where that match started.
+// Whether `line` holds a match, of a regex build_pattern made with the same
+// `word`.
 fn matches(re: regex::Regex&, line: u8[:], word: bool) -> bool {
     if !word { return regex::matches(re, line); }
-    var pos = 0;
-    while pos <= line.len {
-        let s, e = regex::find(re, line[pos..]);
-        if s < 0 { return false; }
-        let a = pos + s;
-        let b = pos + e;
-        let left = a == 0 || !is_word_byte(line[a - 1]);
-        let right = b == line.len || !is_word_byte(line[b]);
-        if left && right { return true; }
-        pos = a + 1;
-    }
-    return false;
+    var padded: u8[>..] = [];
+    padded.push(' ');
+    padded.append(line);
+    padded.push(' ');
+    return regex::matches(re, padded);
 }
 
 // Whether the text looks binary: rg's test, a NUL byte.
