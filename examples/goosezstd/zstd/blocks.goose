@@ -123,7 +123,8 @@ let OF_DEFAULT: i16[29] = [1, 1, 1, 1, 1, 1, 2, 2, 2, 1, 1, 1, 1, 1, 1, 1, 1,
 
 fn predefined(norm: const i16[:], log: i64) -> FseTable {
     var t = FseTable { log: 0, .. };
-    fse_build(t, norm, log);
+    let ok = fse_build(t, norm, log);
+    assert(ok);
     return t;
 }
 

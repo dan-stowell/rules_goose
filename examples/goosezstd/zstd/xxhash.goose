@@ -51,7 +51,7 @@ fn xxh64(data: const u8[:], seed: u64) -> u64 {
         p += 4;
     }
     while p < n {
-        h ^= data[p] as u64 * XXH_P5;
+        h ^= data[p] * XXH_P5;
         h = rotl(h, 11) * XXH_P1;
         p++;
     }

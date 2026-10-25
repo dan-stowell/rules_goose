@@ -14,8 +14,9 @@ struct FseTable { log: i64, t: FseEntry[FSE_MAX_STATES] }
 
 // Builds the decoding table for a normalized distribution: norm[s] is the
 // probability of symbol s in units of 2^-log, with -1 meaning "less than
-// one" (a single state, at the top of the table).
-fn fse_build(t: FseTable&, norm: const i16[:], log: i64) {
+// one" (a single state, at the top of the table). False if the
+// distribution does not fill the table exactly.
+fn fse_build(t: FseTable&, norm: const i16[:], log: i64) -> bool {
     let size = 1 << log;
     var high = size - 1;
     var next: i64[256] = [0; 256];
@@ -42,7 +43,7 @@ fn fse_build(t: FseTable&, norm: const i16[:], log: i64) {
             while pos > high { pos = (pos + step) & m; }
         }
     }
-    if pos != 0 { corrupt("FSE distribution does not fill its table"); }
+    if pos != 0 { return false; }
     for u in size {
         let e .= t.t[u & 511];
         let s = e.sym;
@@ -53,6 +54,7 @@ fn fse_build(t: FseTable&, norm: const i16[:], log: i64) {
         e.base = ((ns << nb) - size) as! u16;
     }
     t.log = log;
+    return true;
 }
 
 // A table that always yields `sym` and reads nothing (RLE mode).
@@ -106,7 +108,7 @@ fn fse_read_table(t: FseTable&, src: const u8[:], max_log: i64, max_sym: i64) ->
     if remaining != 1 || sym > max_sym + 1 || r.pos > src.len * 8 {
         corrupt("bad FSE table description");
     }
-    fse_build(t, norm[..sym], log);
+    if !fse_build(t, norm[..sym], log) { corrupt("FSE distribution does not fill its table"); }
     return (r.pos + 7) >> 3;
 }
 
@@ -117,5 +119,5 @@ fn fse_sym(t: const FseTable&, state: i64) -> u8 { t.t[state & 511].sym }
 
 fn fse_next(t: const FseTable&, b: BackBits&, state: i64) -> i64 {
     let e = t.t[state & 511];
-    return e.base as i64 + back_read(b, e.nbits) as i64;
+    return e.base + back_read(b, e.nbits) as i64;
 }

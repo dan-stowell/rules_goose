@@ -6,7 +6,7 @@
 // the functions in between carry no error plumbing at all.
 import std;
 import zstd.bits;
-import zstd.block;
+import zstd.blocks;
 import zstd.xxhash;
 
 let ZSTD_MAGIC: u64 = 0xFD2FB528;
