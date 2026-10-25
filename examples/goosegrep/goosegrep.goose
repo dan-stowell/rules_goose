@@ -94,6 +94,9 @@ fn main() {
     var source: u8[>..] = [];
     search::build_pattern(source, pattern, o);
     var err: u8[>..] = [];
+    // The pattern must parse on its own too: -w's wrapping could make a
+    // malformed one, ")|x|(?:", well-formed.
+    if o.word && !o.fixed { regex::compile(pattern, err); }
     let re = regex::compile(source, err);
     if err.len > 0 {
         write_stderr(str("goosegrep: bad pattern: ", err, "\n"));

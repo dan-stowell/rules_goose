@@ -187,3 +187,14 @@ cli_test(
     expected = "expected/empty.out",
     exit_code = 2,
 )
+
+# -w must not make a malformed pattern well-formed by wrapping it.
+cli_test(
+    name = "bad_regex_word",
+    args = [
+        "-w",
+        ")|goose|(?:",
+    ],
+    expected = "expected/empty.out",
+    exit_code = 2,
+)
