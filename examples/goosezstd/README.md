@@ -49,10 +49,16 @@ the input byte for byte.
   garbled entropy-coded data all fail with a message.
 * `libzstd_demo_*_test`: the libzstd demo through the same harness.
 * `bench_test`: prints both decoders' throughput on 64 MiB of synthetic data.
-  On BuildBuddy RBE with `-c opt`, goosezstd ran at about 260 MB/s and zstd at
+  On BuildBuddy RBE with `-c opt`, goosezstd ran at about 370 MB/s and zstd at
   about 1.2 GB/s.
+* `perf_bench_test` (manual): best, median and worst of five runs of zstd,
+  the libzstd demo and goosezstd on 64 MiB of synthetic data and of text.
+* `lorem_*_l19_test`, `skewed_*_test`, `far_*_test`: edges of the decoder's
+  fast paths: short Huffman streams, 11-bit Huffman codes, and long offsets
+  and literal lengths.
 
 ```sh
 bb remote test //examples/goosezstd/... --config=remote
 bb remote test //examples/goosezstd:bench_test --config=remote -c opt --test_output=all
+bb remote test //examples/goosezstd:perf_bench_test --config=remote -c opt --test_output=all
 ```
