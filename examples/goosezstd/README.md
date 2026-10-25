@@ -45,20 +45,21 @@ goosezstd to a file, to stdout and from stdin, and compares the result with
 the input byte for byte.
 
 * `multi_frame_test`: five frames and two skippable frames in one file.
-* `reject_test`: bad magic, a bad checksum, truncation, trailing garbage and
-  garbled entropy-coded data all fail with a message.
+* `reject_test`: damaged zstd output (bad magic, a bad checksum, truncation,
+  trailing garbage, garbled entropy-coded data) and hand-made malformed frames
+  from `malformed.sh` (an empty input, FSE states with no bits to start from,
+  bad Huffman weights and FSE tables, too many sequences, a match past the
+  block, an offset beyond the window) each fail with the expected message.
 * `libzstd_demo_*_test`: the libzstd demo through the same harness.
-* `bench_test`: prints both decoders' throughput on 64 MiB of synthetic data.
-  On BuildBuddy RBE with `-c opt`, goosezstd ran at about 370 MB/s and zstd at
-  about 1.2 GB/s.
 * `perf_bench_test` (manual): best, median and worst of five runs of zstd,
-  the libzstd demo and goosezstd on 64 MiB of synthetic data and of text.
+  the libzstd demo and goosezstd on 64 MiB of synthetic data and of text. On
+  BuildBuddy RBE with `-c opt`, goosezstd ran at about 370 MB/s and zstd at
+  about 1.2 GB/s on the synthetic data.
 * `lorem_*_l19_test`, `skewed_*_test`, `far_*_test`: edges of the decoder's
   fast paths: short Huffman streams, 11-bit Huffman codes, and long offsets
   and literal lengths.
 
 ```sh
 bb remote test //examples/goosezstd/... --config=remote
-bb remote test //examples/goosezstd:bench_test --config=remote -c opt --test_output=all
 bb remote test //examples/goosezstd:perf_bench_test --config=remote -c opt --test_output=all
 ```

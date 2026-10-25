@@ -13,9 +13,11 @@ let ZSTD_MAGIC: u64 = 0xFD2FB528;
 let SKIPPABLE_MAGIC: u64 = 0x184D2A50;     // ...to 0x184D2A5F
 
 // Decompresses every frame in src (zstd and skippable frames, back to
-// back), appending the content to out. Returns an error message, empty on
-// success; on an error, out holds what was decoded before it.
+// back, at least one), appending the content to out. Returns an error
+// message, empty on success; on an error, out holds what was decoded before
+// it.
 fn zstd_decompress(src: const u8[:], out: u8[>..]&) -> u8[>..] {
+    if src.len == 0 { corrupt("empty input: no frames"); }
     var p = 0;
     while p < src.len {
         if src.len - p < 4 { corrupt("truncated frame header"); }
@@ -53,6 +55,9 @@ fn decode_frame(src: const u8[:], out: u8[>..]&) -> i64 {
         if p >= src.len { corrupt("truncated frame header"); }
         let wd: i64 = src[p];
         p++;
+        // Up to about 2^41. libzstd refuses windows over 2^27 unless told
+        // otherwise, to bound its memory; here the whole output is in
+        // memory anyway, so the window size costs nothing.
         let base = 1 << (10 + (wd >> 3));
         window = base + (base / 8) * (wd & 7);
     }
@@ -90,7 +95,7 @@ fn decode_frame(src: const u8[:], out: u8[>..]&) -> i64 {
             p += 1;
         } else if kind == 2 {
             if p + size > src.len { corrupt("truncated compressed block"); }
-            decode_block(src[p..p + size], st, lits, out, frame_start, block_max);
+            decode_block(src[p..p + size], st, lits, out, frame_start, window, block_max);
             p += size;
         } else {
             corrupt("reserved block type");

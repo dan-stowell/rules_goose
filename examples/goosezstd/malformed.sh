@@ -29,9 +29,9 @@ hex ${HDR}3d0000''42c000''8113''01''00 > "$out/huf_bad_weights.zst"
 # A literal-length FSE table with accuracy log 10 (the limit is 9).
 hex ${HDR}350000''00''0180''050001 > "$out/fse_log_too_large.zst"
 
-# An offset FSE table whose counts do not add up to its 32 states: one
-# symbol of count 0, then runs of zeros past the last symbol.
-hex ${HDR}450000''00''0120''10ffffff''01 > "$out/fse_bad_counts.zst"
+# An offset FSE table whose counts do not fill its 32 states: one symbol of
+# probability 0, then runs of zeros past the last symbol.
+hex ${HDR}450000''00''0120''10feffff''01 > "$out/fse_bad_counts.zst"
 
 # After a 100-byte raw block: 127 sequences (RLE tables, one offset bit
 # each) in a stream of no bits.

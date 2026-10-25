@@ -21,8 +21,6 @@ fn run_cli<Decode>() {
     var mode = 0;                       // 1: -d, 2: -t
     var input: const u8[:] = "";
     var output: const u8[:] = "";
-    var have_in = false;
-    var have_out = false;
     var i = 1;
     while i < a.len {
         let s = a[i];
@@ -34,17 +32,15 @@ fn run_cli<Decode>() {
             i++;
             if i >= a.len { usage(prog); }
             output = a[i];
-            have_out = true;
         } else if s.len > 1 && s[0] == '-' {
             usage(prog);
         } else {
-            if have_in { usage(prog); }
+            if input.len > 0 { usage(prog); }
             input = s;
-            have_in = true;
         }
         i++;
     }
-    if mode == 0 || !have_in { usage(prog); }
+    if mode == 0 || input.len == 0 { usage(prog); }
 
     var src: u8[>..] = [];
     if input == "-" {
@@ -63,7 +59,7 @@ fn run_cli<Decode>() {
         write_stderr(str(input, ": OK (", src.len, " -> ", out.len, " bytes)\n"));
         return;
     }
-    if have_out {
+    if output.len > 0 {
         if !write_file(output, out) {
             write_stderr(str(prog, ": cannot write ", output, "\n"));
             exit(1);

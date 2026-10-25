@@ -112,8 +112,13 @@ fn fse_read_table(t: FseTable&, src: const u8[:], max_log: i64, max_sym: i64) ->
     return (r.pos + 7) >> 3;
 }
 
-// Decoding: a state is an index into the table.
-fn fse_init(t: const FseTable&, b: BackBits&) -> i64 { back_read(b, t.log) as i64 }
+// Decoding: a state is an index into the table. The initial state must be
+// in the stream, not in the zeros below its start.
+fn fse_init(t: const FseTable&, b: BackBits&) -> i64 {
+    let state = back_read(b, t.log) as i64;
+    if b.pos < 0 { corrupt("truncated FSE stream"); }
+    return state;
+}
 
 fn fse_sym(t: const FseTable&, state: i64) -> u8 { t.t[state & 511].sym }
 

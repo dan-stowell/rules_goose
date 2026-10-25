@@ -5,7 +5,7 @@
 
 load("@rules_shell//shell:sh_test.bzl", "sh_test")
 load("//goose:defs.bzl", "goose_binary")
-load(":fixtures.bzl", "ZSTD", "decompress_test", "zstd_compress", "zstd_matrix")
+load(":fixtures.bzl", "ZSTD", "decompress_test", "reject_test", "zstd_compress", "zstd_matrix", "zstd_roundtrip")
 
 DECODER_SRCS = [
     "zstd/bits.goose",
@@ -212,16 +212,10 @@ decompress_test(
     testonly = True,
 ) for n in [100, 300, 1000]]
 
-[zstd_compress(
+[zstd_roundtrip(
     name = "lorem_%d_l19" % n,
     src = ":lorem_%d.txt" % n,
     flags = "-19",
-) for n in [100, 300, 1000]]
-
-[decompress_test(
-    name = "lorem_%d_l19_test" % n,
-    compressed = ":lorem_%d_l19.zst" % n,
-    original = ":lorem_%d.txt" % n,
 ) for n in [100, 300, 1000]]
 
 # Long offsets and literal lengths: 1 MiB of noise A, 16 MiB of noise, 100
@@ -241,18 +235,12 @@ genrule(
     testonly = True,
 )
 
-[zstd_compress(
+[zstd_roundtrip(
     name = "far_" + n,
+    size = "medium",
     src = ":far.bin",
     flags = f,
 ) for n, f in [("long", "-3 --long=27"), ("l19_long", "-19 --long=27")]]
-
-[decompress_test(
-    name = "far_%s_test" % n,
-    size = "medium",
-    compressed = ":far_%s.zst" % n,
-    original = ":far.bin",
-) for n in ["long", "l19_long"]]
 
 # ---- Damaged input is rejected ------------------------------------------
 
@@ -260,9 +248,9 @@ genrule(
 DAMAGED = {
     "bad_magic.zst": "bad magic number",
     "bad_checksum.zst": "checksum mismatch",
-    "truncated.zst": "?",
+    "truncated.zst": "truncated compressed block",
     "trailing_garbage.zst": "bad magic number",
-    "garbled.zst": "?",
+    "garbled.zst": "match offset before the start of the frame",
 }
 
 genrule(
@@ -293,15 +281,15 @@ genrule(
 
 # Hand-made frames, each broken in one way (see malformed.sh).
 MALFORMED = {
-    "empty.zst": "?",
-    "huf_fse_init_truncated.zst": "?",
-    "seq_fse_init_truncated.zst": "?",
+    "empty.zst": "empty input: no frames",
+    "huf_fse_init_truncated.zst": "truncated FSE stream",
+    "seq_fse_init_truncated.zst": "truncated FSE stream",
     "huf_bad_weights.zst": "Huffman weights do not complete a tree",
     "fse_log_too_large.zst": "FSE accuracy log too large",
     "fse_bad_counts.zst": "bad FSE table description",
     "seq_count_too_large.zst": "sequence stream size mismatch",
     "seq_past_block.zst": "block too large",
-    "offset_beyond_window.zst": "?",
+    "offset_beyond_window.zst": "match offset beyond the window",
 }
 
 genrule(
@@ -312,15 +300,10 @@ genrule(
     testonly = True,
 )
 
-REJECTS = DAMAGED | MALFORMED
-
-sh_test(
+reject_test(
     name = "reject_test",
-    size = "small",
-    srcs = ["reject_test.sh"],
-    args = ["$(rootpath :goosezstd)"] +
-           [a for f, msg in REJECTS.items() for a in ["$(rootpath :%s)" % f, "'%s'" % msg]],
-    data = [":goosezstd"] + [":" + f for f in REJECTS],
+    decoder = ":goosezstd",
+    rejects = DAMAGED | MALFORMED,
 )
 
 # ---- The libzstd demo ---------------------------------------------------
@@ -352,29 +335,35 @@ decompress_test(
     testonly = True,
 ) for s in ["128K", "256K"]]
 
-[zstd_compress(
-    name = "exact_%s_l3" % s,
+[zstd_roundtrip(
+    name = "libzstd_demo_exact_%s" % s,
     src = ":exact_%s.bin" % s,
+    decoder = ":libzstd_demo",
     flags = "-3",
 ) for s in ["128K", "256K"]]
 
-[decompress_test(
-    name = "libzstd_demo_exact_%s_test" % s,
-    compressed = ":exact_%s_l3.zst" % s,
-    decoder = ":libzstd_demo",
-    original = ":exact_%s.bin" % s,
-) for s in ["128K", "256K"]]
+# libzstd rejects the same files, but for offset_beyond_window: it checks
+# offsets against the frame's start only. Its messages are its error names.
+CORRUPT = "Data corruption detected"
 
-# libzstd rejects all the same files; its messages are its error names.
-LIBZSTD_REJECTS = {f: "?" for f in REJECTS}
-
-sh_test(
+reject_test(
     name = "libzstd_demo_reject_test",
-    size = "small",
-    srcs = ["reject_test.sh"],
-    args = ["$(rootpath :libzstd_demo)"] +
-           [a for f, msg in LIBZSTD_REJECTS.items() for a in ["$(rootpath :%s)" % f, "'%s'" % msg]],
-    data = [":libzstd_demo"] + [":" + f for f in LIBZSTD_REJECTS],
+    decoder = ":libzstd_demo",
+    rejects = {
+        "bad_magic.zst": "Unknown frame descriptor",
+        "bad_checksum.zst": "Restored data doesn't match checksum",
+        "truncated.zst": "truncated input",
+        "trailing_garbage.zst": "Unknown frame descriptor",
+        "garbled.zst": CORRUPT,
+        "empty.zst": "truncated input",
+        "huf_fse_init_truncated.zst": CORRUPT,
+        "seq_fse_init_truncated.zst": CORRUPT,
+        "huf_bad_weights.zst": CORRUPT,
+        "fse_log_too_large.zst": CORRUPT,
+        "fse_bad_counts.zst": CORRUPT,
+        "seq_count_too_large.zst": CORRUPT,
+        "seq_past_block.zst": "Destination buffer is too small",
+    },
 )
 
 # ---- Throughput, against the real zstd ----------------------------------
@@ -397,28 +386,6 @@ zstd_compress(
     name = "big_l19",
     src = ":big.bin",
     flags = "-19 -T0",
-)
-
-# Prints MB/s for both decoders to its log (bb view ... :bench_test).
-sh_test(
-    name = "bench_test",
-    size = "medium",
-    srcs = ["bench_test.sh"],
-    args = [
-        "$(rootpath :goosezstd)",
-        "$(rootpath %s)" % ZSTD,
-        "$(rootpath :big.bin)",
-        "$(rootpath :big_l3.zst)",
-        "$(rootpath :big_l19.zst)",
-    ],
-    data = [
-        ":big.bin",
-        ":big_l19.zst",
-        ":big_l3.zst",
-        ":goosezstd",
-        ZSTD,
-    ],
-    tags = ["exclusive"],
 )
 
 # Throughput of goosezstd, the libzstd demo and the zstd CLI, best, median
@@ -459,13 +426,7 @@ sh_test(
            ["%s=$(rootpath %s)" % (n, d) for n, d in PERF_DECODERS.items()] +
            ["--"] +
            ["$(rootpath %s)" % f for pair in PERF_INPUTS for f in pair],
-    data = PERF_DECODERS.values() + [
-        ":big.bin",
-        ":big_l19.zst",
-        ":big_l3.zst",
-        ":big_text.txt",
-        ":big_text_l3.zst",
-    ],
+    data = PERF_DECODERS.values() + {f: None for pair in PERF_INPUTS for f in pair}.keys(),
     tags = [
         "exclusive",
         "manual",
