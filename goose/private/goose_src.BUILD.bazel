@@ -8,9 +8,6 @@
 #     runtime directory (the tcc driver, libtcc1, staged headers) is not built,
 #     so GOOSE_TCC_LIB_PATH points nowhere. `goose -o` never reaches it.
 #
-# Genrule commands use bash builtins only, which is all some remote executors
-# (actiond) provide.
-#
 # Goose is Apache-2.0 licensed; TinyCC is LGPL-2.1 (third_party/tinycc/COPYING).
 
 load("@rules_cc//cc:cc_binary.bzl", "cc_binary")

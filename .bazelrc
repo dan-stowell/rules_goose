@@ -4,8 +4,8 @@
 # This repository builds with hermetic-llvm (registered in MODULE.bazel as a
 # dev dependency), targeting static musl, so the Goose compiler (which runs in
 # the exec configuration) and the test programs run on any x86-64 Linux,
-# whatever its glibc: remote executors and actiond's VM included. (On a host
-# that is not x86-64 Linux this cross-compiles; run with the remote configs.)
+# whatever its glibc. (On a host that is not x86-64 Linux this cross-compiles;
+# run with the remote config.)
 build:musl --platforms=@llvm//platforms:linux_x86_64_musl
 build:musl --host_platform=@llvm//platforms:linux_x86_64_musl
 # musl is linked statically only, so tests (cc_test defaults to dynamic) too.
@@ -21,22 +21,5 @@ build:remote --bes_backend=grpcs://buildbuddy.buildbuddy.io
 build:remote --bes_results_url=https://buildbuddy.buildbuddy.io/invocation/
 build:remote --remote_download_minimal
 build:remote --jobs=100
-
-# A local remote executor (actiond) at 127.0.0.1:8980: every action runs in
-# its VM, none on this host.
-build:actiond --remote_executor=grpc://127.0.0.1:8980
-build:actiond --remote_cache=grpc://127.0.0.1:8980
-build:actiond --spawn_strategy=remote
-build:actiond --genrule_strategy=remote
-build:actiond --remote_local_fallback=false
-build:actiond --remote_upload_local_results=false
-build:actiond --noremote_cache_compression
-# A small VM: some compiles (libc++) take over the default 60s.
-build:actiond --remote_timeout=3600
-# actiond's VM provides bash (and no other tools) only to actions that ask for
-# it, and Bazel's test.xml fallback needs cat and sed, so tests run under a
-# wrapper that writes test.xml itself.
-build:actiond --remote_default_exec_properties=requires-bash=
-test:actiond --run_under=//tools/actiond:write_test_xml
 
 try-import %workspace%/user.bazelrc

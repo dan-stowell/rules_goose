@@ -2,8 +2,7 @@
 # Usage: expect_stdout.sh <program> <expected stdout> [program args...]
 # Runs the program and compares its stdout with the expected file, ignoring
 # trailing newlines, as upstream's samples/run_samples.py does. stderr, where
-# the samples put timings, is not compared. Bash builtins only, so that it runs
-# on executors without coreutils (actiond).
+# the samples put timings, is not compared.
 set -euo pipefail
 prog="$1"
 expected="$2"

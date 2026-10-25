@@ -92,7 +92,6 @@ def _goose_c_impl(ctx):
         arguments = [args],
         mnemonic = "GooseCompile",
         progress_message = "Compiling Goose program %{label}",
-        # Bash builtins only: some remote executors (actiond) have nothing else.
         command = """
 set -eu
 execroot="$(pwd -P)"

@@ -110,27 +110,19 @@ This repository's own builds use
 a dev dependency (users don't inherit it). `.bazelrc` targets
 `@llvm//platforms:linux_x86_64_musl` for both the target and the host (exec)
 platform: everything, the Goose compiler included, is linked statically against
-musl, so it runs on any x86-64 Linux whatever its glibc (remote executors and
-actiond's VM included). On another host OS this cross-compiles; use one of the
-remote configs below to run the tests.
+musl, so it runs on any x86-64 Linux whatever its glibc (remote executors
+included). On another host OS this cross-compiles; use the remote config below
+to run the tests.
 
 ## Developing rules_goose
 
 ```sh
 # BuildBuddy RBE (the runner clones the branch from GitHub, so push first)
 bb remote test //... --config=remote
-# A local remote executor (actiond) on 127.0.0.1:8980
-bazel test --config=actiond //...
 ```
 
 `--config=remote` sets the BuildBuddy executor, cache and BES flags,
-`--remote_download_minimal` and `--jobs=100`. `--config=actiond` points
-everything at actiond, with no local fallback. actiond's VM has bash and
-nothing else, and runs bash only for actions that ask for it, so that config
-also sets the `requires-bash` exec property and runs tests under
-`//tools/actiond:write_test_xml`, which writes `test.xml` itself (Bazel's own
-fallback needs `cat` and `sed`). For the same reason the rule's compile action,
-the overlay's genrules and the test scripts use bash builtins only.
+`--remote_download_minimal` and `--jobs=100`.
 
 Tests (`tests/`) build upstream samples and tests straight from the pinned Goose
 tree and compare their stdout with upstream's expected output:

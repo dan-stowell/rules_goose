@@ -2,7 +2,7 @@
 # Usage: c_has_no_build_paths.sh <generated .c>...
 # The C that goose_binary writes must be the same on every machine and in every
 # sandbox: it may not name the execroot, a sandbox, the output tree, or the
-# staging directory. Bash builtins only (see expect_stdout.sh).
+# staging directory.
 set -euo pipefail
 status=0
 for c in "$@"; do
