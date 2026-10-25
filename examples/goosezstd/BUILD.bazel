@@ -256,13 +256,14 @@ genrule(
 
 # ---- Damaged input is rejected ------------------------------------------
 
-DAMAGED = [
-    "bad_magic.zst",
-    "bad_checksum.zst",
-    "truncated.zst",
-    "trailing_garbage.zst",
-    "garbled.zst",
-]
+# Damaged versions of real zstd output, with goosezstd's message for each.
+DAMAGED = {
+    "bad_magic.zst": "bad magic number",
+    "bad_checksum.zst": "checksum mismatch",
+    "truncated.zst": "?",
+    "trailing_garbage.zst": "bad magic number",
+    "garbled.zst": "?",
+}
 
 genrule(
     name = "damaged",
@@ -270,7 +271,7 @@ genrule(
         ":noise_l3.zst",
         ":lorem_l19.zst",
     ],
-    outs = DAMAGED,
+    outs = DAMAGED.keys(),
     cmd = """
         srcs=($(SRCS))
         raw=$${srcs[0]} huf=$${srcs[1]}
@@ -290,12 +291,36 @@ genrule(
     testonly = True,
 )
 
+# Hand-made frames, each broken in one way (see malformed.sh).
+MALFORMED = {
+    "empty.zst": "?",
+    "huf_fse_init_truncated.zst": "?",
+    "seq_fse_init_truncated.zst": "?",
+    "huf_bad_weights.zst": "Huffman weights do not complete a tree",
+    "fse_log_too_large.zst": "FSE accuracy log too large",
+    "fse_bad_counts.zst": "bad FSE table description",
+    "seq_count_too_large.zst": "sequence stream size mismatch",
+    "seq_past_block.zst": "block too large",
+    "offset_beyond_window.zst": "?",
+}
+
+genrule(
+    name = "malformed",
+    srcs = ["malformed.sh"],
+    outs = MALFORMED.keys(),
+    cmd = "bash $< $(RULEDIR)",
+    testonly = True,
+)
+
+REJECTS = DAMAGED | MALFORMED
+
 sh_test(
     name = "reject_test",
     size = "small",
     srcs = ["reject_test.sh"],
-    args = ["$(rootpath :goosezstd)"] + ["$(rootpath :%s)" % f for f in DAMAGED],
-    data = [":goosezstd"] + [":" + f for f in DAMAGED],
+    args = ["$(rootpath :goosezstd)"] +
+           [a for f, msg in REJECTS.items() for a in ["$(rootpath :%s)" % f, "'%s'" % msg]],
+    data = [":goosezstd"] + [":" + f for f in REJECTS],
 )
 
 # ---- The libzstd demo ---------------------------------------------------
@@ -340,18 +365,16 @@ decompress_test(
     original = ":exact_%s.bin" % s,
 ) for s in ["128K", "256K"]]
 
+# libzstd rejects all the same files; its messages are its error names.
+LIBZSTD_REJECTS = {f: "?" for f in REJECTS}
+
 sh_test(
     name = "libzstd_demo_reject_test",
     size = "small",
     srcs = ["reject_test.sh"],
-    args = [
-        "$(rootpath :libzstd_demo)",
-        "$(rootpath :truncated.zst)",
-    ],
-    data = [
-        ":libzstd_demo",
-        ":truncated.zst",
-    ],
+    args = ["$(rootpath :libzstd_demo)"] +
+           [a for f, msg in LIBZSTD_REJECTS.items() for a in ["$(rootpath :%s)" % f, "'%s'" % msg]],
+    data = [":libzstd_demo"] + [":" + f for f in LIBZSTD_REJECTS],
 )
 
 # ---- Throughput, against the real zstd ----------------------------------
