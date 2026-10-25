@@ -102,10 +102,37 @@ fn huf_decode_stream(h: const HufTable&, src: const u8[:], out: u8[>..]&, count:
     var b, ok = back_bits(src);
     if !ok { corrupt("bad Huffman stream"); }
     let mb = h.maxbits;
-    for i in count {
+    let m = mask(mb) as! i64;
+    var i = 0;
+    // Four codes per 8-byte load while far enough from the start: v holds
+    // the r >= 56 bits below pos, and four codes take at most
+    // 4 * HUF_MAX_BITS = 44 of them.
+    while i + 4 <= count && b.pos >= 56 {
+        let byte = (b.pos - 56) >> 3;
+        let v = load_le64(b.src, byte);
+        var r = b.pos - byte * 8;
+        let e0 = h.t[(((v >> (r - mb)) as! i64) & m) & 2047];
+        r -= e0.nbits;
+        let e1 = h.t[(((v >> (r - mb)) as! i64) & m) & 2047];
+        r -= e1.nbits;
+        let e2 = h.t[(((v >> (r - mb)) as! i64) & m) & 2047];
+        r -= e2.nbits;
+        let e3 = h.t[(((v >> (r - mb)) as! i64) & m) & 2047];
+        r -= e3.nbits;
+        out.push(e0.sym);
+        out.push(e1.sym);
+        out.push(e2.sym);
+        out.push(e3.sym);
+        b.pos = byte * 8 + r;
+        i += 4;
+    }
+    // The last few codes one at a time; near the start, back_peek reads
+    // zeros below it.
+    while i < count {
         let e = h.t[(back_peek(b, mb) as! i64) & 2047];
         out.push(e.sym);
         b.pos -= e.nbits;
+        i++;
     }
     if b.pos != 0 { corrupt("Huffman stream size mismatch"); }
 }

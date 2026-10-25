@@ -17,10 +17,13 @@ fn highbit(x: u64) -> i64 { 63 - clz(x) }
 // read as zero.
 fn load_le64(src: const u8[:], at: i64) -> u64 {
     if at >= 0 && at + 8 <= src.len {
-        return src[at] | (src[at + 1] as u64 << 8) | (src[at + 2] as u64 << 16) |
-               (src[at + 3] as u64 << 24) | (src[at + 4] as u64 << 32) |
-               (src[at + 5] as u64 << 40) | (src[at + 6] as u64 << 48) |
-               (src[at + 7] as u64 << 56);
+        // One bounds check for the slice, none for the bytes.
+        let w = src[at..at + 8];
+        assert(w.len == 8);
+        return w[0] | (w[1] as u64 << 8) | (w[2] as u64 << 16) |
+               (w[3] as u64 << 24) | (w[4] as u64 << 32) |
+               (w[5] as u64 << 40) | (w[6] as u64 << 48) |
+               (w[7] as u64 << 56);
     }
     var v: u64 = 0;
     for k in 8 {

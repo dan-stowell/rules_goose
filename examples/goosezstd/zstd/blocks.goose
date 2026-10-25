@@ -212,10 +212,54 @@ fn decode_sequences(src: const u8[:], st: FrameState&, lits: const u8[:],
         let ofc: i64 = fse_sym(of_t, sof);
         let mlc: i64 = fse_sym(ml_t, sml);
         let llc: i64 = fse_sym(ll_t, sll);
-        // Extra bits come in the order offset, match length, literal length.
-        let ofv = ((1 as u64) << ofc) as! i64 + back_read(b, ofc) as! i64;
-        let ml = ML_BASE[mlc % 53] + back_read(b, ML_BITS[mlc % 53]) as! i64;
-        let ll = LL_BASE[llc % 36] + back_read(b, LL_BITS[llc % 36]) as! i64;
+        let ml_bits = ML_BITS[mlc % 53];
+        let ll_bits = LL_BITS[llc % 36];
+        var ofv = 1 << ofc;
+        var ml = ML_BASE[mlc % 53];
+        var ll = LL_BASE[llc % 36];
+        // Extra bits come in the order offset, match length, literal length,
+        // then the states update in the order literal length, match length,
+        // offset.
+        if b.pos >= 128 {
+            // Two 8-byte loads, each holding at least the 56 bits below the
+            // position it is made at: the first for the offset and match
+            // length bits (at most 31 + 16), the second for the literal
+            // length bits and the three state updates (at most 16 + 9 + 9 + 8).
+            var byte = (b.pos - 56) >> 3;
+            var v = load_le64(b.src, byte);
+            var r = b.pos - byte * 8;
+            r -= ofc;
+            ofv += ((v >> r) & mask(ofc)) as! i64;
+            r -= ml_bits;
+            ml += ((v >> r) & mask(ml_bits)) as! i64;
+            let pos = byte * 8 + r;
+            byte = (pos - 56) >> 3;
+            v = load_le64(b.src, byte);
+            r = pos - byte * 8;
+            r -= ll_bits;
+            ll += ((v >> r) & mask(ll_bits)) as! i64;
+            if i + 1 < nseq {
+                let el = ll_t.t[sll & 511];
+                r -= el.nbits;
+                sll = el.base + ((v >> r) & mask(el.nbits)) as! i64;
+                let em = ml_t.t[sml & 511];
+                r -= em.nbits;
+                sml = em.base + ((v >> r) & mask(em.nbits)) as! i64;
+                let eo = of_t.t[sof & 511];
+                r -= eo.nbits;
+                sof = eo.base + ((v >> r) & mask(eo.nbits)) as! i64;
+            }
+            b.pos = byte * 8 + r;
+        } else {
+            ofv += back_read(b, ofc) as! i64;
+            ml += back_read(b, ml_bits) as! i64;
+            ll += back_read(b, ll_bits) as! i64;
+            if i + 1 < nseq {
+                sll = fse_next(ll_t, b, sll);
+                sml = fse_next(ml_t, b, sml);
+                sof = fse_next(of_t, b, sof);
+            }
+        }
 
         // Offset values 1-3 name a repeat offset; with no literals before
         // the match, they shift by one (and 3 means "the last one, minus 1").
@@ -236,13 +280,6 @@ fn decode_sequences(src: const u8[:], st: FrameState&, lits: const u8[:],
                 r1 = r0;
                 r0 = off;
             }
-        }
-
-        if i + 1 < nseq {
-            // States update in the order literal length, match length, offset.
-            sll = fse_next(ll_t, b, sll);
-            sml = fse_next(ml_t, b, sml);
-            sof = fse_next(of_t, b, sof);
         }
 
         if lp + ll > lits.len { corrupt("sequence needs more literals than there are"); }
