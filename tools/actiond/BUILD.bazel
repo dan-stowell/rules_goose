@@ -1,0 +1,7 @@
+load("@rules_shell//shell:sh_binary.bzl", "sh_binary")
+
+# --run_under wrapper for actiond (see .bazelrc).
+sh_binary(
+    name = "write_test_xml",
+    srcs = ["write_test_xml.sh"],
+)

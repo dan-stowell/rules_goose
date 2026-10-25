@@ -92,31 +92,31 @@ def _goose_c_impl(ctx):
         arguments = [args],
         mnemonic = "GooseCompile",
         progress_message = "Compiling Goose program %{label}",
+        # Bash builtins only: some remote executors (actiond) have nothing else.
         command = """
 set -eu
 execroot="$(pwd -P)"
 compiler="$execroot/$1"
 out="$execroot/$2"
+# Nothing is fetched (--offline), and no package cache is read: GOOSE_HOME
+# names a directory that does not exist.
+goose_home="${out%/*}/.goose-home-unused"
 cd "$3"
 main="$4"
 shift 4
 here_physical="$(pwd -P)"
 here_logical="$(pwd)"
-# Nothing is fetched (--offline), and no package cache is read: GOOSE_HOME
-# names a directory that does not exist.
-if ! GOOSE_HOME="$execroot/$(dirname "$2")/.goose-home-unused" \\
-    "$compiler" --standalone --offline --stdlib ../stdlib "$@" -o "$out.tmp" "$main" \\
-    > "$out.log" 2>&1; then
-  cat "$out.log" >&2
-  rm -f "$out.tmp" "$out.log"
-  exit 1
-fi
-rm -f "$out.log"
+# The compiler's progress goes to stdout, its errors to stderr.
+GOOSE_HOME="$goose_home" \\
+    "$compiler" --standalone --offline --stdlib ../stdlib "$@" -o "$out" "$main" > /dev/null
 # Path packages (import x from "./dir") are named by absolute path in the C;
-# make them relative to the source tree, so the C is the same everywhere.
-esc() { printf '%s/' "$1" | sed -e 's/[].[^$*\\\\]/\\\\&/g'; }
-sed -e "s|$(esc "$here_physical")||g" -e "s|$(esc "$here_logical")||g" "$out.tmp" > "$out"
-rm -f "$out.tmp"
+# make those paths relative to the source tree, so the C is the same everywhere.
+c="$(< "$out")"
+if [[ "$c" == *"$here_physical/"* || "$c" == *"$here_logical/"* ]]; then
+  c="${c//"$here_physical/"/}"
+  c="${c//"$here_logical/"/}"
+  printf '%s\\n' "$c" > "$out"
+fi
 """,
     )
 

@@ -1,14 +1,21 @@
 #!/usr/bin/env bash
 # Usage: c_has_no_build_paths.sh <generated .c>...
-# The C that goose_binary writes must be the same on every machine: it may not
-# name the execroot, a sandbox, the output tree, or the staging directory.
+# The C that goose_binary writes must be the same on every machine and in every
+# sandbox: it may not name the execroot, a sandbox, the output tree, or the
+# staging directory. Bash builtins only (see expect_stdout.sh).
 set -euo pipefail
 status=0
 for c in "$@"; do
-  if grep -n -E 'execroot|sandbox|bazel-out|/_goose/|\.goose-home' "$c" >&2; then
-    echo "FAIL: $c names a build-specific path (lines above)" >&2
-    status=1
-  fi
+  text="$(< "$c")"
+  for bad in execroot sandbox bazel-out /_goose/ .goose-home /home/ /tmp/ /private/var/; do
+    if [[ "$text" == *"$bad"* ]]; then
+      echo "FAIL: $c contains \"$bad\"" >&2
+      while IFS= read -r line; do
+        [[ "$line" == *"$bad"* ]] && echo "  $line" >&2
+      done <<< "$text"
+      status=1
+    fi
+  done
 done
-[ "$status" = 0 ] && echo "PASS: no build-specific paths in $*"
+[[ "$status" == 0 ]] && echo "PASS: no build-specific paths in $*"
 exit "$status"
