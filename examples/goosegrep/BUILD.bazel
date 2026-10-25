@@ -1,0 +1,189 @@
+# goosegrep: a small ripgrep in Goose, and its tests.
+
+load("//goose:defs.bzl", "goose_binary", "goose_test")
+load(":cli_test.bzl", "cli_test")
+
+goose_binary(
+    name = "goosegrep",
+    srcs = [
+        "search.goose",
+        "walk.goose",
+    ],
+    goose_opts = ["-O2"],
+    main = "goosegrep.goose",
+)
+
+# The search module on its own.
+goose_test(
+    name = "search_test",
+    size = "small",
+    srcs = ["search.goose"],
+    main = "search_test.goose",
+)
+
+# The fixture tree the CLI tests search. Its hidden files and its binary file
+# (binary.bin, with a NUL byte) all hold "goose", which goosegrep must skip.
+filegroup(
+    name = "testdata",
+    srcs = [
+        "testdata/.dotfile",
+        "testdata/.hidden/secret.txt",
+        "testdata/README.md",
+        "testdata/binary.bin",
+        "testdata/notes.txt",
+        "testdata/src/lib/goose.goose",
+        "testdata/src/main.go",
+    ],
+)
+
+# Each case runs `goosegrep <args>` in testdata/ and checks stdout and the
+# exit code (0: a line was selected, 1: none, 2: an error).
+
+# The current directory, walked recursively in path order: path:line:text.
+cli_test(
+    name = "default",
+    args = ["goose"],
+)
+
+cli_test(
+    name = "ignore_case",
+    args = ["-i", "goose"],
+)
+
+cli_test(
+    name = "word",
+    args = ["-w", "goose"],
+)
+
+# Short flags combine.
+cli_test(
+    name = "word_ignore_case",
+    args = ["-iw", "goose"],
+)
+
+cli_test(
+    name = "regex",
+    args = ["--ignore-case", "qu[a-z]+ck|DU.K"],
+)
+
+# -F: the pattern's punctuation is literal.
+cli_test(
+    name = "fixed",
+    args = [
+        "-F",
+        "$$3.50",
+    ],
+)
+
+cli_test(
+    name = "fixed_paren",
+    args = [
+        "--fixed-strings",
+        "(approx",
+    ],
+    expected = "expected/fixed.out",
+)
+
+# Without -F, "(approx" is a malformed regex.
+cli_test(
+    name = "bad_regex",
+    args = ["(approx"],
+    expected = "expected/empty.out",
+    exit_code = 2,
+)
+
+cli_test(
+    name = "count",
+    args = ["-c", "goose"],
+)
+
+# One file: no file name in front.
+cli_test(
+    name = "count_one_file",
+    args = [
+        "-c",
+        "o",
+        "notes.txt",
+    ],
+)
+
+cli_test(
+    name = "files_with_matches",
+    args = ["-l", "goose"],
+)
+
+# One file: neither file names nor line numbers by default.
+cli_test(
+    name = "invert",
+    args = [
+        "-v",
+        "goose",
+        "notes.txt",
+    ],
+)
+
+cli_test(
+    name = "line_number",
+    args = [
+        "-n",
+        "dog",
+        "notes.txt",
+    ],
+)
+
+cli_test(
+    name = "no_line_number",
+    args = ["-N", "goose"],
+)
+
+# A directory argument, and "." spelled out.
+cli_test(
+    name = "dir_arg",
+    args = [
+        "honk",
+        "src",
+    ],
+)
+
+cli_test(
+    name = "dot_arg",
+    args = [
+        "-l",
+        "goose",
+        ".",
+    ],
+)
+
+# A hidden file named explicitly is searched.
+cli_test(
+    name = "hidden_explicit",
+    args = [
+        "goose",
+        ".hidden/secret.txt",
+    ],
+)
+
+cli_test(
+    name = "no_match",
+    args = ["zebra"],
+    expected = "expected/empty.out",
+    exit_code = 1,
+)
+
+# A missing path is an error, but the other files are still searched.
+cli_test(
+    name = "missing_path",
+    args = [
+        "dog",
+        "notes.txt",
+        "nope.txt",
+    ],
+    exit_code = 2,
+)
+
+cli_test(
+    name = "no_args",
+    args = [],
+    expected = "expected/empty.out",
+    exit_code = 2,
+)
