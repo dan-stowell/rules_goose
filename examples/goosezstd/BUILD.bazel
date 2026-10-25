@@ -185,19 +185,21 @@ decompress_test(
 
 # ---- Damaged input is rejected ------------------------------------------
 
+DAMAGED = [
+    "bad_magic.zst",
+    "bad_checksum.zst",
+    "truncated.zst",
+    "trailing_garbage.zst",
+    "garbled.zst",
+]
+
 genrule(
     name = "damaged",
     srcs = [
         ":noise_l3.zst",
         ":lorem_l19.zst",
     ],
-    outs = [
-        "bad_magic.zst",
-        "bad_checksum.zst",
-        "truncated.zst",
-        "trailing_garbage.zst",
-        "garbled.zst",
-    ],
+    outs = DAMAGED,
     cmd = """
         srcs=($(SRCS))
         raw=$${srcs[0]} huf=$${srcs[1]}
@@ -221,17 +223,8 @@ sh_test(
     name = "reject_test",
     size = "small",
     srcs = ["reject_test.sh"],
-    args = ["$(rootpath :goosezstd)"] + ["$(rootpath :%s)" % f for f in [
-        "bad_magic.zst",
-        "bad_checksum.zst",
-        "truncated.zst",
-        "trailing_garbage.zst",
-        "garbled.zst",
-    ]],
-    data = [
-        ":damaged",
-        ":goosezstd",
-    ],
+    args = ["$(rootpath :goosezstd)"] + ["$(rootpath :%s)" % f for f in DAMAGED],
+    data = [":goosezstd"] + [":" + f for f in DAMAGED],
 )
 
 # ---- The libzstd demo ---------------------------------------------------
