@@ -1,1 +1,1 @@
-Goose fixture tree for goosegrep.
+Goose fixture tree.

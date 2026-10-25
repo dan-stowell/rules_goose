@@ -6,7 +6,8 @@
 set -uo pipefail
 prog="$PWD/$1"
 tree="${2%/*}"
-want="$(< "$3")"
+expected="$3"
+want="$(< "$expected")"
 want_code="$4"
 shift 4
 cd "$tree" || exit 1
@@ -18,7 +19,7 @@ if [[ "$code" != "$want_code" ]]; then
   fail=1
 fi
 if [[ "$got" != "$want" ]]; then
-  echo "FAIL: stdout of goosegrep $* differs from $3" >&2
+  echo "FAIL: stdout of goosegrep $* differs from $expected" >&2
   echo "--- want:" >&2
   printf '%s\n' "$want" >&2
   echo "--- got:" >&2

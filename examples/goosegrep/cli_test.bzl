@@ -26,6 +26,7 @@ def cli_test(name, args, expected = None, exit_code = 0):
         data = [
             ":goosegrep",
             ":testdata",
+            "testdata/README.md",
             expected,
         ],
     )
